@@ -5,6 +5,7 @@ import numpy as np
 
 from Display import Display
 
+
 def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     np.random.seed(seed)
     n = num_s + num_d + num_c
