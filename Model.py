@@ -57,7 +57,7 @@ def create(problem, settings):
             problem.demand[c, p, f] for f in range(problem.start, t + 1) if (c, p, f) in problem.demand_set)
         return ontvangst - cum_demand
 
-    if settings['perfect_delivery']:
+    if not settings['perfect_delivery']:
         tot_backlog_cost += gb.quicksum(
             gb.quicksum(
                 problem.backlog_pen[c, p] * (verschil_customer(c, p, t) ** 2) for c, p in problem.customer_product) for t in
