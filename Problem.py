@@ -6,6 +6,7 @@ import numpy as np
 from Display import Display
 
 
+# Function that can create random instances
 def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     np.random.seed(seed)
     n = num_s + num_d + num_c
@@ -127,50 +128,46 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
 
 class Problem:
 
-    def __init__(self, filename):
-        # Werkt als je de dataset in dezelfde folder hebt staan als dit bestand (en de dataset onder dezelfde naam
-        # hebt staan)
+    def __init__(self, instance_name):
+        # Retrieve instance file from Instances directory
+        self.instance_name = instance_name
         cwd = os.getcwd()
-        filename = os.path.join(cwd, 'Instances/' + filename)
+        filename = os.path.join(cwd, 'Instances/' + instance_name + '.xlsx')
         data = pd.read_excel(filename, sheet_name=None)
 
         # Data extraction
         # --------------------------------------------------------------------------------------
-        self.supplier_data = data['Suppliers']
-        self.depot_data = data['Depots']
-        self.customer_data = data['Customers']
-        self.product_data = data['Products']
-        self.link_data = data['Links']
-        self.demand_data = data['Demand']
-        self.backlog_data = data['Backlog Penalty']
-        self.production_data = data['Production']
-        self.parameter_data = data['Parameters']
+        supplier_data = data['Suppliers']
+        depot_data = data['Depots']
+        customer_data = data['Customers']
+        product_data = data['Products']
+        link_data = data['Links']
+        demand_data = data['Demand']
+        backlog_data = data['Backlog Penalty']
+        production_data = data['Production']
+        parameter_data = data['Parameters']
         self.truck_size = data['Parameters']['Value'][0]
 
         # Nu de data is voorbereid gaan we de sets aanmaken voor onze parameters EN onze decision variables
-        self.S = self.supplier_data['SupplierID'].to_list()
-        self.D = self.depot_data['DepotID'].to_list()
-        self.C = self.customer_data['CustomerID'].to_list()
+        self.S = supplier_data['SupplierID'].to_list()
+        self.D = depot_data['DepotID'].to_list()
+        self.C = customer_data['CustomerID'].to_list()
         self.S_and_D = self.S + self.D
         self.D_and_C = self.D + self.C
-        self.P = self.product_data['ProductID'].to_list()
-        self.start = int(self.parameter_data['Value'][1].replace('T', ''))
-        self.end = int(self.parameter_data['Value'][2].replace('T', ''))
-        self.T = [t for t in range(self.start, self.end + 1, 1)]  # Nog niet zeker over deze notatie
-        self.links = [(self.link_data['Origin'][i], self.link_data['Destination'][i]) for i in
-                      range(len(self.link_data))]
-        self.customer_product_time = [
-            (self.demand_data['Customer'][i], self.demand_data['Product'][i], self.demand_data['Time'][i])
-            for i in range(len(self.demand_data))]
-        self.customer_product = [(self.backlog_data['Customer'][i], self.backlog_data['Product'][i]) for i in
-                                 range(len(self.backlog_data))]
-        self.supplier_product = [(self.production_data['Supplier'][i], self.production_data['Product'][i])
-                                 for i in range(len(self.production_data))]
+        self.P = product_data['ProductID'].to_list()
+        self.start = int(parameter_data['Value'][1].replace('T', ''))
+        self.end = int(parameter_data['Value'][2].replace('T', ''))
+        self.T = [t for t in range(self.start, self.end + 1, 1)]
+        self.links = [(link_data['Origin'][i], link_data['Destination'][i]) for i in range(len(link_data))]
+        self.customer_product = [(backlog_data['Customer'][i], backlog_data['Product'][i]) for i in
+                                 range(len(backlog_data))]
+        self.supplier_product = [(production_data['Supplier'][i], production_data['Product'][i])
+                                 for i in range(len(production_data))]
         self.demand_set = []
-        for i in range(len(self.demand_data)):
+        for i in range(len(demand_data)):
             self.demand_set.append(
-                (self.demand_data['Customer'][i], self.demand_data['Product'][i],
-                 int(self.demand_data['Time'][i].replace('T', ''))))
+                (demand_data['Customer'][i], demand_data['Product'][i],
+                 int(demand_data['Time'][i].replace('T', ''))))
 
         # Sets die nodig zijn voor de decision variables
         self.link_product_time = []
@@ -178,6 +175,7 @@ class Problem:
             for p in self.P:
                 for t in self.T:
                     self.link_product_time.append((a[0], a[1], p, t))
+
         self.link_time = []
         for a in self.links:
             for t in self.T:
@@ -185,9 +183,8 @@ class Problem:
 
         self.supplier_product_time = []
         for t in self.T:
-            for i in range(len(self.production_data)):
-                self.supplier_product_time.append((self.production_data['Supplier'][i],
-                                                   self.production_data['Product'][i], t))
+            for i in range(len(production_data)):
+                self.supplier_product_time.append((production_data['Supplier'][i], production_data['Product'][i], t))
 
         self.depot_product_time = []
         for d in self.D:
@@ -200,38 +197,30 @@ class Problem:
             for t in self.T:
                 self.depot_time.append((d, t))
 
-        self.customer_product_time = []
-        for i in range(len(self.demand_data)):
-            self.customer_product_time.append((
-                self.demand_data['Customer'][i],
-                self.demand_data['Product'][i],
-                int(self.demand_data['Time'][i].replace('T', ''))
-            ))
-
         # Nu we de sets hebben gemaakt gaan we door met de parameters aan te maken
         # De distance is hier ook al aangemaakt
         # --------------------------------------------------------------------------------------
-        self.holding_cost = {self.D[i]: self.depot_data['Holding Cost'][i] for i in range(len(self.D))}
-        self.capacity = {self.D[i]: self.depot_data['Capacity'][i] for i in range(len(self.D))}
-        self.product_volume = {self.P[i]: self.product_data['Size'][i] for i in range(len(self.P))}
-        self.opening_cost = {self.links[i]: self.link_data['Opening Cost'][i] for i in range(len(self.link_data))}
-        self.capacity_cost = {self.links[i]: self.link_data['Capacity Cost'][i] for i in range(len(self.link_data))}
-        self.duration = {self.links[i]: self.link_data['Duration'][i] for i in range(len(self.link_data))}
-        self.locations = pd.concat([self.supplier_data.iloc[:, :3].rename(columns={'SupplierID': 'Location'}),
-                                    self.depot_data.iloc[:, :3].rename(columns={'DepotID': 'Location'}),
-                                    self.customer_data.iloc[:, :3].rename(columns={'CustomerID': 'Location'})])
+        self.holding_cost = {self.D[i]: depot_data['Holding Cost'][i] for i in range(len(self.D))}
+        self.capacity = {self.D[i]: depot_data['Capacity'][i] for i in range(len(self.D))}
+        self.product_volume = {self.P[i]: product_data['Size'][i] for i in range(len(self.P))}
+        self.opening_cost = {self.links[i]: link_data['Opening Cost'][i] for i in range(len(link_data))}
+        self.capacity_cost = {self.links[i]: link_data['Capacity Cost'][i] for i in range(len(link_data))}
+        self.duration = {self.links[i]: link_data['Duration'][i] for i in range(len(link_data))}
+        self.locations = pd.concat([supplier_data.iloc[:, :3].rename(columns={'SupplierID': 'Location'}),
+                                    depot_data.iloc[:, :3].rename(columns={'DepotID': 'Location'}),
+                                    customer_data.iloc[:, :3].rename(columns={'CustomerID': 'Location'})])
         self.locations.set_index([self.locations['Location']], inplace=True)
         self.distance = {a: np.hypot(self.locations.loc[a[0]]['LocationX'] - self.locations.loc[a[1]]['LocationX'],
                                      self.locations.loc[a[0]]['LocationY'] - self.locations.loc[a[1]]['LocationY']) for
                          a in
                          self.links}
-        self.demand = {self.demand_set[i]: self.demand_data['Amount'][i] for i in range(len(self.demand_data))}
-        self.backlog_pen = {self.customer_product[i]: self.backlog_data['Amount'][i] for i in
-                            range(len(self.backlog_data))}
-        self.min_prod = {self.supplier_product[i]: self.production_data['Minimum'][i] for i in
-                         range(len(self.production_data))}
-        self.max_prod = {self.supplier_product[i]: self.production_data['Maximum'][i] for i in
-                         range(len(self.production_data))}
+        self.demand = {self.demand_set[i]: demand_data['Amount'][i] for i in range(len(demand_data))}
+        self.backlog_pen = {self.customer_product[i]: backlog_data['Amount'][i] for i in
+                            range(len(backlog_data))}
+        self.min_prod = {self.supplier_product[i]: production_data['Minimum'][i] for i in
+                         range(len(production_data))}
+        self.max_prod = {self.supplier_product[i]: production_data['Maximum'][i] for i in
+                         range(len(production_data))}
 
         self.cum_demand = {}
         for c in self.C:
@@ -246,6 +235,7 @@ class Problem:
             'r': {}
         }
 
+    # Function that determines inventory of product p at node i at time t
     def inventory(self, i, p, t):
         incoming = sum(
             sum(self.solution['x'][j, i, p, str((f - self.duration[j, i]))] for f in range(self.start, t + 1) if
@@ -262,15 +252,17 @@ class Problem:
                 (i, j) in self.links)
             return incoming - outgoing
 
-    def read_solution(self, filename):
+    # Function that updates this problem object's solution based on a solution file
+    def read_solution(self, instance_name):
         # Read solution
-        with open('Solutions/' + filename, newline='\n') as file:
+        with open('Solutions/' + instance_name + '.sol', newline='\n') as file:
             reader = csv.reader((line.replace('  ', ' ') for line in file), delimiter=' ')
             next(reader)  # Skip header
             for var, value in reader:
                 name = tuple(var[2:-1].split(','))
                 self.solution[var[0]][name] = float(value)
 
+    # Log the amount of trucks sent over each link at each point in time
     def log_k(self):
         k = {}
         for link in self.links:
@@ -325,9 +317,8 @@ class Problem:
             input('Press enter to continue..')
             print()
 
-
+    # Call display on this problem's solution showing only opened links and their capacities
     def display(self):
         disp = Display(self)
-        disp.draw(0, {})
+        disp.draw(0, {'show_capacities': True, 'show_trucks': False, 'show_transport': False, 'show_inventory': False})
         input('Press enter to continue..')
-

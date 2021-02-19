@@ -1,56 +1,39 @@
-import numpy as np
+import Model
 
 
-def get_v_bounds(problem):
-    v_bounds = {
-        link: {'lb': 0, 'ub': np.inf} for link in problem.links
-    }
-    # Upper bounds for suppliers
-    max_production_volume = {
-        s: sum(problem.product_volume[p] * problem.max_prod[(s, p)] for p in problem.P if (s, p) in problem.max_prod)
-        for s in problem.S
-    }
-    for s in problem.S:
-        bound = np.ceil(max_production_volume[s] / problem.truck_size)
-        for j in problem.D_and_C:
-            if v_bounds[(s, j)]['ub'] > bound:
-                v_bounds[(s, j)]['ub'] = bound
-
-    # Upper bounds for depots
-    for d in problem.D:
-        bound = np.ceil(problem.capacity[d] / problem.truck_size)
-        for j in problem.D_and_C:
-            if d is not j:
-                if v_bounds[(d, j)]['ub'] > bound:
-                    v_bounds[(d, j)]['ub'] = bound
-
-    min_production_volume = {
-        (s, p): problem.product_volume[p] * problem.min_prod[(s, p)] for (s, p) in problem.supplier_product
-    }
-    # Required capacity to use production at a supplier
-    required_supplier_capacity = {
-        (s, p): np.ceil(min_production_volume[(s, p)] / problem.truck_size) for (s, p) in problem.supplier_product
-    }
-
-    print('Simple bounds')
-    print('-' * 70)
-    for link, bounds in v_bounds.items():
-        print(link, bounds)
-
-    # Required capacity to possibly deliver all orders without backlog
-    required_capacity_no_backlog = {
-        c: np.ceil(max([problem.product_volume[p] * problem.demand[(c, p, t)] for p in problem.P for t in problem.T
-                        if (c, p, t) in problem.demand]) / problem.truck_size) for c in problem.C
-    }
+def solve(problem):
+    # Create relaxed version of the model and solve it
+    relaxed_model = Model.create(problem, {
+        'all_links_open': True,
+        'non_integer_trucks': True,
+        'perfect_delivery': True,
+    })
+    Model.solve(relaxed_model, problem.instance_name + '_relaxed')
+    # Load the solution into our problem object
+    problem.read_solution(problem.instance_name + '_relaxed')
+    problem.display()
+    drop_links(problem)
+    # Create reduced, non-relaxed model
+    model = Model.create(problem, {
+        'all_links_open': False,
+        'non_integer_trucks': False,
+        'perfect_delivery': False,
+    })
+    Model.solve(model, problem.instance_name)
+    # Load the feasible solution into our problem object
+    problem.read_solution(problem.instance_name)
 
 
-    print('No backlog bounds')
-    print('-' * 70)
-    for key, value in required_capacity_no_backlog.items():
-        print(key, value)
+def drop_links(problem):
+    unused_links = [link for link in problem.links if problem.solution['v'][link] == 0]
+    # Remove unused links form all relevant sets
+    for link in unused_links:
+        problem.links.remove(link)
+        for t in problem.T:
+            problem.link_time.remove((link[0], link[1], t))
+            for p in problem.P:
+                problem.link_product_time.remove((link[0], link[1], p, t))
 
 
-    print('Minimum supplier bounds')
-    print('-' * 70)
-    for key, value in required_supplier_capacity.items():
-        print(key, value)
+def round_capacities(problem):
+    return
