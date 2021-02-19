@@ -29,14 +29,17 @@ draw_settings = {
 
 model_settings = {
     'all_links_open': False,
-    'non_integer_trucks': True
+    'non_integer_trucks': False,
+    'perfect_delivery': True,
+    'infinite_production': False
 }
+instance_name = 'large_data_set'
 
-problem = Problem('large_data_set.xlsx')
+problem = Problem(instance_name + '.xlsx')
 mdl = Model.create(problem, model_settings)
-Model.solve(mdl, 'large_data_set')
+Model.solve(mdl, instance_name)
 
-problem.read_solution('large_data_set.sol')
+problem.read_solution(instance_name + '.sol')
 problem.log_solution(Display(problem), draw_settings)
 
 # problem = Problem('large_data_set.xlsx')

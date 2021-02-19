@@ -57,10 +57,11 @@ def create(problem, settings):
             problem.demand[c, p, f] for f in range(problem.start, t + 1) if (c, p, f) in problem.demand_set)
         return ontvangst - cum_demand
 
-    tot_backlog_cost += gb.quicksum(
-        gb.quicksum(
-            problem.backlog_pen[c, p] * (verschil_customer(c, p, t) ** 2) for c, p in problem.customer_product) for t in
-        problem.T)
+    if settings['perfect_delivery']:
+        tot_backlog_cost += gb.quicksum(
+            gb.quicksum(
+                problem.backlog_pen[c, p] * (verschil_customer(c, p, t) ** 2) for c, p in problem.customer_product) for t in
+            problem.T)
 
     mdl.setObjective(tot_opening_cost + tot_capacity_cost + tot_distance_cost + tot_holding_cost + tot_backlog_cost,
                      gb.GRB.MINIMIZE)
@@ -91,6 +92,15 @@ def create(problem, settings):
         (i, c) in problem.links) == gb.quicksum(
         problem.demand[c, p, t] for t in problem.T if (c, p, t) in problem.demand_set) for c, p in
                    problem.customer_product)
+
+    if settings['perfect_delivery']:
+        mdl.addConstrs(
+            problem.demand[c, p, t] == gb.quicksum(x[i, c, p, t - problem.duration[i, c]] for i in problem.S_and_D
+                                                   if t - problem.duration[i, c] >= problem.start
+                                                   )
+            for c, p, t in problem.customer_product_time
+        )
+
     # Het model genereren
     mdl.update()
     # mdl.optimize()

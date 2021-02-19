@@ -201,10 +201,12 @@ class Problem:
                 self.depot_time.append((d, t))
 
         self.customer_product_time = []
-        for c in self.C:
-            for p in self.P:
-                for t in self.T:
-                    self.customer_product_time.append((c, p, t))
+        for i in range(len(self.demand_data)):
+            self.customer_product_time.append((
+                self.demand_data['Customer'][i],
+                self.demand_data['Product'][i],
+                int(self.demand_data['Time'][i].replace('T', ''))
+            ))
 
         # Nu we de sets hebben gemaakt gaan we door met de parameters aan te maken
         # De distance is hier ook al aangemaakt
