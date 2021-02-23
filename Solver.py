@@ -4,7 +4,7 @@ from Model import Model
 def solve(problem):
     # Create relaxed version of the model and solve it
     relaxed_model = Model(problem, {
-        'all_links_open': True,
+        'all_links_open': False,
         'non_integer_trucks': True,
         'perfect_delivery': True,
     })
@@ -12,12 +12,16 @@ def solve(problem):
     # Load the solution into our problem object
     problem.read_solution(problem.instance_name + '_relaxed')
     drop_links(problem)
+    # Construct bounds to be used in reduced problem
+    bounds = {
+        'r': problem.solution['r']
+    }
     # Create reduced, non-relaxed model
     reduced_model = Model(problem, {
         'all_links_open': False,
         'non_integer_trucks': False,
         'perfect_delivery': False,
-    })
+    }, bounds)
     reduced_model.solve(problem.instance_name)
     # Load the feasible solution into our problem object
     problem.read_solution(problem.instance_name)

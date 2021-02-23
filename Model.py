@@ -2,7 +2,9 @@ import gurobipy as gb
 
 
 class Model:
-    def __init__(self, problem, settings):
+    def __init__(self, problem, settings, bounds=None):
+        if bounds is None:
+            bounds = {}
         # Model setup
         # --------------------------------------------------------------------------------------
         mdl = gb.Model()
@@ -26,6 +28,12 @@ class Model:
         else:
             k = mdl.addVars(problem.link_time, vtype=gb.GRB.INTEGER, lb=0, name='k')
             v = mdl.addVars(problem.links, vtype=gb.GRB.INTEGER, lb=0, name='v')
+
+        # Set bounds if provided
+        if 'r' in bounds:
+            for (s, p, t) in bounds['r'].keys():
+                r[s, p, int(t)].lb = bounds['r'][(s, p, t)]
+                r[s, p, int(t)].ub = bounds['r'][(s, p, t)]
 
         # Objective
         # --------------------------------------------------------------------------------------
