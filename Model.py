@@ -34,6 +34,10 @@ class Model:
             for (s, p, t) in bounds['r'].keys():
                 r[s, p, int(t)].lb = bounds['r'][(s, p, t)]
                 r[s, p, int(t)].ub = bounds['r'][(s, p, t)]
+        if 'v' in bounds:
+            for (i, j) in bounds['v'].keys():
+                v[i, j].lb = bounds['v'][(i, j)]['lb']
+                v[i, j].ub = bounds['v'][(i, j)]['ub']
 
         # Objective
         # --------------------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+import math
+
 from Model import Model
 
 
@@ -14,7 +16,8 @@ def solve(problem):
     drop_links(problem)
     # Construct bounds to be used in reduced problem
     bounds = {
-        'r': problem.solution['r']
+        'r': problem.solution['r'],
+        'v': get_capacity_bounds(problem)
     }
     # Create reduced, non-relaxed model
     reduced_model = Model(problem, {
@@ -38,5 +41,9 @@ def drop_links(problem):
                 problem.link_product_time.remove((link[0], link[1], p, t))
 
 
-def round_capacities(problem):
-    return
+def get_capacity_bounds(problem):
+    capacity_bounds = {(i, j): {'lb': math.floor(problem.solution['v'][(i, j)]),
+                                'ub': math.ceil(problem.solution['v'][(i, j)])}
+                       for (i, j) in problem.links}
+    print(capacity_bounds)
+    return capacity_bounds
