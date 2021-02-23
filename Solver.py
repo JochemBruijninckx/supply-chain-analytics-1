@@ -6,7 +6,7 @@ from Model import Model
 def solve(problem):
     # Create relaxed version of the model and solve it
     relaxed_model = Model(problem, {
-        'all_links_open': False,
+        'all_links_open': True,
         'non_integer_trucks': True,
         'perfect_delivery': True,
     })
@@ -17,7 +17,7 @@ def solve(problem):
     # Construct bounds to be used in reduced problem
     bounds = {
         'r': problem.solution['r'],
-        'v': get_capacity_bounds(problem)
+        'v': get_v_bounds(problem)
     }
     # Create reduced, non-relaxed model
     reduced_model = Model(problem, {
@@ -41,9 +41,8 @@ def drop_links(problem):
                 problem.link_product_time.remove((link[0], link[1], p, t))
 
 
-def get_capacity_bounds(problem):
-    capacity_bounds = {(i, j): {'lb': math.floor(problem.solution['v'][(i, j)]),
-                                'ub': math.ceil(problem.solution['v'][(i, j)])}
-                       for (i, j) in problem.links}
-    print(capacity_bounds)
-    return capacity_bounds
+def get_v_bounds(problem):
+    v_bounds = {(i, j): {'lb': math.floor(problem.solution['v'][(i, j)]),
+                         'ub': math.ceil(problem.solution['v'][(i, j)])}
+                for (i, j) in problem.links}
+    return v_bounds
