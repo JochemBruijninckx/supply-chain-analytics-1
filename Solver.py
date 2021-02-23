@@ -1,25 +1,24 @@
-import Model
+from Model import Model
 
 
 def solve(problem):
     # Create relaxed version of the model and solve it
-    relaxed_model = Model.create(problem, {
+    relaxed_model = Model(problem, {
         'all_links_open': True,
         'non_integer_trucks': True,
         'perfect_delivery': True,
     })
-    Model.solve(relaxed_model, problem.instance_name + '_relaxed')
+    relaxed_model.solve(problem.instance_name + '_relaxed')
     # Load the solution into our problem object
     problem.read_solution(problem.instance_name + '_relaxed')
-    problem.display()
     drop_links(problem)
     # Create reduced, non-relaxed model
-    model = Model.create(problem, {
+    reduced_model = Model(problem, {
         'all_links_open': False,
         'non_integer_trucks': False,
         'perfect_delivery': False,
     })
-    Model.solve(model, problem.instance_name)
+    reduced_model.solve(problem.instance_name)
     # Load the feasible solution into our problem object
     problem.read_solution(problem.instance_name)
 
