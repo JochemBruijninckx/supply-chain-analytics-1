@@ -46,3 +46,16 @@ def get_v_bounds(problem):
                          'ub': math.ceil(problem.solution['v'][(i, j)])}
                 for (i, j) in problem.links}
     return v_bounds
+
+
+def linear_approximation(x, delta):
+    if x == 0:
+        return 0
+    else:
+        x_abs = abs(x)
+        segment = math.floor(x_abs / delta) + 1
+        slope = (segment ** 2 - (segment - 1) ** 2) * delta
+        intercept = ((segment * delta) ** 2) - slope * (segment * delta)
+        if x < 0:
+            slope = -slope
+    return slope * x + intercept
