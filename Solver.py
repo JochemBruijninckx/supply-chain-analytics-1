@@ -4,9 +4,21 @@ from Model import Model
 
 
 def solve(problem):
+    # Create reduced, non-relaxed model
+    model = Model(problem, {
+        'all_links_open': False,
+        'non_integer_trucks': False,
+        'perfect_delivery': False,
+    })
+    model.solve(problem.instance_name)
+    # Load the solution into our problem object
+    problem.read_solution(problem.instance_name)
+
+
+def heuristic(problem):
     # Create relaxed version of the model and solve it
     relaxed_model = Model(problem, {
-        'all_links_open': True,
+        'all_links_open': False,
         'non_integer_trucks': True,
         'perfect_delivery': True,
     })
@@ -47,15 +59,3 @@ def get_v_bounds(problem):
                 for (i, j) in problem.links}
     return v_bounds
 
-
-def linear_approximation(x, delta):
-    if x == 0:
-        return 0
-    else:
-        x_abs = abs(x)
-        segment = math.floor(x_abs / delta) + 1
-        slope = (segment ** 2 - (segment - 1) ** 2) * delta
-        intercept = ((segment * delta) ** 2) - slope * (segment * delta)
-        if x < 0:
-            slope = -slope
-    return slope * x + intercept

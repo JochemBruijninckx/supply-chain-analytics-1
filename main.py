@@ -11,8 +11,9 @@ from Solver import *
 #              T=19)
 
 # Read and create problem
-instance_name = 'large_data_set'
+instance_name = 'small_data_set'
 problem = Problem(instance_name)
 # Solve it using the heuristic and display the solution
 solve(problem)
+# heuristic(problem)
 problem.display()
