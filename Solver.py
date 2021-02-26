@@ -14,6 +14,7 @@ def solve(problem):
     # Create regular model
     model = Model(problem, bounds=bounds)
     model.solve(problem.instance_name)
+    model.write(problem.instance_name)
     # Load the solution into our problem object
     problem.read_solution(problem.instance_name)
 

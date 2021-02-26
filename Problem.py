@@ -72,7 +72,7 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
             link_index += 1
     print(link_data)
     # Sheet 6 - Demand
-    demand_data = pd.DataFrame(index=pd.MultiIndex.from_product([['C' + str(i + 1) for i in range(num_s)],
+    demand_data = pd.DataFrame(index=pd.MultiIndex.from_product([['C' + str(i + 1) for i in range(num_c)],
                                                                  ['P' + str(j + 1) for j in range(num_p)],
                                                                  ['T' + str(t) for t in range(5, T + 1)]], ),
                                columns=['Amount'])
@@ -303,13 +303,11 @@ class Problem:
             print('-' * 70)
             # Depot inventory
             for d in self.D:
-                I = self.inventory(d, 'P1', t)
-                print(d, '| Inventory:', round(I, 2), '(Capacity', str(round(self.capacity[d] /
+                print(d, '| Inventory:', round(self.solution['I'][d, 'P1', str(t)], 2), '(Capacity', str(round(self.capacity[d] /
                                                                              self.product_volume['P1'], 2)) + ')')
             # Customer inventory
             for c in self.C:
-                I = self.inventory(c, 'P1', t)
-                print(c, '| Inventory:', round(I, 2))
+                print(c, '| Inventory:', round(self.solution['I'][c, 'P1', str(t)], 2))
 
             print('-' * 70)
             # Supplier production
