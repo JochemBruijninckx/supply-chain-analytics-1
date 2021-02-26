@@ -15,5 +15,6 @@ instance_name = 'small_data_set'
 problem = Problem(instance_name)
 # Solve it using the heuristic and display the solution
 solve(problem)
-# heuristic(problem)
+problem.log_k()
+problem.log_backlog()
 problem.display()
