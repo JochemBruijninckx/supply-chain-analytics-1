@@ -13,8 +13,8 @@ from Solver import *
 # Read and create problem
 instance_name = 'small_data_set'
 problem = Problem(instance_name)
+problem.read_solution(instance_name)
 # Solve it using the heuristic and display the solution
 solve(problem)
-problem.log_k()
 problem.display()
 problem.log_solution()

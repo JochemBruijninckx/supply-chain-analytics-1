@@ -244,23 +244,6 @@ class Problem:
             'I': {}
         }
 
-    # Function that determines inventory of product p at node i at time t
-    def inventory(self, i, p, t):
-        incoming = sum(
-            sum(self.solution['x'][j, i, p, str((f - self.duration[j, i]))] for f in range(self.start, t + 1) if
-                f - self.duration[j, i] >= self.start)
-            for j
-            in self.S_and_D if (j, i) in self.links)
-        if i not in self.D:
-            # i is a customer, so no outgoing product
-            return incoming
-        else:
-            # i is a depot
-            outgoing = sum(
-                sum(self.solution['x'][i, j, p, str(f)] for f in range(self.start, t + 1)) for j in self.D_and_C if
-                (i, j) in self.links)
-            return incoming - outgoing
-
     # Function that updates this problem object's solution based on a solution file
     def read_solution(self, instance_name):
         # Read solution
@@ -276,19 +259,23 @@ class Problem:
         k = {}
         for link in self.links:
             if self.solution['l'][link] == 1:
-                k[link] = [int(self.solution['k'][link + (str(t),)]) for t in self.T]
+                k[link] = [round(self.solution['k'][link + (str(t),)]) for t in self.T]
+        print()
+        print('Amount of trucks sent over each link at each point in time:')
+        print('-' * 70)
         for link, trucks in k.items():
             print(link, trucks)
 
     def log_backlog(self):
         total_backlog_penalty = 0
+        print()
+        print('Backlog overview:')
+        print('-' * 70)
         for c, p, t in self.customer_product_time:
             print(c, p, t)
             print('-' * 70)
             print('Total demand:', self.cum_demand[c, p, t])
             print('Inventory:', self.solution['I'][c, p, str(t)])
-            print('Penalty:', self.backlog_pen[c, p])
-            print('Difference:', self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t])
             extra_penalty = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             print('Incurred penalty:', extra_penalty)
             print('-' * 70)
@@ -296,6 +283,9 @@ class Problem:
         print(total_backlog_penalty)
 
     def log_solution(self, display=None, draw_settings=None):
+        print()
+        print('Solution overview:')
+        print('-' * 70)
         for t in self.T:
             if display:
                 display.draw(t, draw_settings)
@@ -303,11 +293,13 @@ class Problem:
             print('-' * 70)
             # Depot inventory
             for d in self.D:
-                print(d, '| Inventory:', round(self.solution['I'][d, 'P1', str(t)], 2), '(Capacity', str(round(self.capacity[d] /
-                                                                             self.product_volume['P1'], 2)) + ')')
+                print(d, '| Inventory:', round(self.solution['I'][d, 'P1', str(t)], 2), '(Capacity',
+                      str(round(self.capacity[d] /
+                                self.product_volume['P1'], 2)) + ')')
             # Customer inventory
             for c in self.C:
-                print(c, '| Inventory:', round(self.solution['I'][c, 'P1', str(t)], 2))
+                print(c, '| Inventory:', round(self.solution['I'][c, 'P1', str(t)], 2),
+                      'Cumulative demand:', self.cum_demand[c, 'P1', t])
 
             print('-' * 70)
             # Supplier production
@@ -323,7 +315,8 @@ class Problem:
                     if i is not j:
                         transport = self.solution['x'][(i, j, 'P1', str(t))]
                         if transport > 0:
-                            print(i, '->', j, '| Units:', round(transport, 2))
+                            print(i, '->', j, '| Units:', round(transport, 2),
+                                  'Trucks:', round(self.solution['k'][i, j, str(t)]))
             print('-' * 70)
             # Arriving transport
             print('Arriving transport:')
@@ -335,19 +328,78 @@ class Problem:
                             if f + self.duration[(i, j)] == t:
                                 transport = self.solution['x'][(i, j, 'P1', str(f))]
                                 if transport > 0:
-                                    print(i, '->', j, '| Units:', round(transport, 2), '(Sent at time', str(f) + ')')
+                                    print(i, '->', j, '| Units:', round(transport, 2),
+                                          'Trucks:', round(self.solution['k'][i, j, str(f)]), '(Sent at time',
+                                          str(f) + ')')
 
             input('Press enter to continue..')
             print()
+
+    # Function that outputs the buildup of different cost types
+    def log_objective(self):
+        print()
+        print('Objective overview:')
+        print('-' * 70)
+        # Opening costs
+        tot_opening_costs = 0
+        for link in self.links:
+            if self.solution['l'][link] == 1:
+                extra_opening_cost = self.opening_cost[link]
+                print(link, '| Cost:', extra_opening_cost)
+                tot_opening_costs += extra_opening_cost
+        print('Total opening costs:', round(tot_opening_costs, 2))
+        print('-' * 70)
+        # Capacity costs
+        tot_capacity_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
+                print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:', self.capacity_cost[link],
+                      '| Total cost:', round(extra_capacity_cost, 2))
+                tot_capacity_costs += extra_capacity_cost
+        print('Total capacity costs:', round(tot_capacity_costs, 2))
+        print('-' * 70)
+        # Distance costs
+        tot_distance_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                extra_distance_cost = total_trucks_sent * self.distance[link]
+                print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
+                      '| Cost per:', round(self.distance[link], 2), '| Total cost:', round(extra_distance_cost, 2))
+                tot_distance_costs += extra_distance_cost
+        print('Total distance costs:', round(tot_distance_costs, 2))
+        print('-' * 70)
+        # Holding costs
+        tot_holding_costs = 0
+        for d in self.D:
+            print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
+            for p in self.P:
+                print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
+                                             for t in self.T])
+                extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
+                                                                 * self.product_volume[p] for t in self.T])
+                print(d, p, '| Total inventory:',
+                      sum([round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2) for t in self.T]),
+                      '| Total cost:', round(extra_holding_cost, 2))
+                tot_holding_costs += extra_holding_cost
+        print('Total holding costs:', round(tot_holding_costs, 2))
+        print('-' * 70)
+        # Backlog costs
+        tot_backlog_costs = 0
+        for c, p, t in self.customer_product_time:
+            extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
+            tot_backlog_costs += extra_backlog
+        print('Total backlog costs:', round(tot_backlog_costs, 2))
+        print('-' * 70)
 
     def log_depot(self, d):
         for t in self.T:
             print('Time', t)
             print('-' * 70)
             # Depot inventory
-            I = self.inventory(d, 'P1', t)
-            print(d, '| Inventory:', round(I, 2), '(Capacity', str(round(self.capacity[d] /
-                                                                         self.product_volume['P1'], 2)) + ')')
+            print(d, '| Inventory:', round(self.solution['I'][d, 'P1', str(t)], 2),
+                  '(Capacity', str(round(self.capacity[d] / self.product_volume['P1'], 2)) + ')')
             print('-' * 70)
             # Outgoing transport
             print('Outgoing transport:')

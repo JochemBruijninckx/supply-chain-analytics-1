@@ -6,10 +6,10 @@ from Model import Model
 def solve(problem):
     bounds = None
     # bounds = {'v': get_v_bounds(problem, all_zero=True)}
-    # bounds['v'][('D2', 'C1')]['ub'] = 5
-    # bounds['v'][('D2', 'C3')]['ub'] = 5
-    # bounds['v'][('S1', 'D2')]['ub'] = 5
-    # bounds['v'][('S2', 'C2')]['ub'] = 4
+    # bounds['v'][('D2', 'C1')]['ub'] = 4
+    # bounds['v'][('D2', 'C3')]['ub'] = 4
+    # bounds['v'][('S1', 'D2')]['ub'] = 3
+    # bounds['v'][('S2', 'C2')]['ub'] = 3
     # bounds['v'][('S2', 'D2')]['ub'] = 4
     # Create regular model
     model = Model(problem, bounds=bounds)

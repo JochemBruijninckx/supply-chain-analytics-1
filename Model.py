@@ -65,8 +65,8 @@ class Model:
                                         for d, t in problem.depot_time)
 
         # Backlog costs
-        tot_backlog_cost += gb.quicksum(
-            (I[c, p, t] - problem.cum_demand[c, p, t]) ** 2 for c, p, t in problem.customer_product_time)
+        tot_backlog_cost += gb.quicksum(problem.backlog_pen[c, p] * (I[c, p, t] - problem.cum_demand[c, p, t]) ** 2
+                                        for c, p, t in problem.customer_product_time)
 
         mdl.setObjective(tot_opening_cost + tot_capacity_cost + tot_distance_cost + tot_holding_cost + tot_backlog_cost,
                          gb.GRB.MINIMIZE)
