@@ -29,7 +29,6 @@ def heuristic(problem):
     relaxed_model.solve(problem.instance_name + '_relaxed')
     # Load the solution into our problem object
     problem.read_solution(problem.instance_name + '_relaxed')
-    problem.display()
     drop_links(problem)
     # Construct bounds to be used in reduced problem
     bounds = {
@@ -69,3 +68,14 @@ def get_v_bounds(problem, all_zero=False):
                     for (i, j) in problem.links}
     return v_bounds
 
+
+def get_utilization_costs(problem):
+    utilization_costs = {}
+    for link in problem.links:
+        if link in problem.solution['v']:
+            link_costs = problem.opening_cost[link] + problem.capacity_cost[link] * problem.solution['v'][link]
+            link_utilization = sum([problem.product_volume[p] * problem.solution['x'][link[0], link[1], p, str(t)]
+                                    for p in problem.P for t in problem.T])
+            utilization_costs[link] = link_costs / link_utilization
+    utilization_costs = dict(sorted(utilization_costs.items(), key=lambda item: -item[1]))
+    return utilization_costs
