@@ -72,7 +72,7 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
             link_index += 1
     print(link_data)
     # Sheet 6 - Demand
-    demand_data = pd.DataFrame(index=pd.MultiIndex.from_product([['C' + str(i + 1) for i in range(num_s)],
+    demand_data = pd.DataFrame(index=pd.MultiIndex.from_product([['C' + str(i + 1) for i in range(num_c)],
                                                                  ['P' + str(j + 1) for j in range(num_p)],
                                                                  ['T' + str(t) for t in range(5, T + 1)]], ),
                                columns=['Amount'])
@@ -148,7 +148,9 @@ class Problem:
         parameter_data = data['Parameters']
         self.truck_size = data['Parameters']['Value'][0]
 
-        # Nu de data is voorbereid gaan we de sets aanmaken voor onze parameters EN onze decision variables
+        # Object- and index sets
+        # --------------------------------------------------------------------------------------
+        # Object sets
         self.S = supplier_data['SupplierID'].to_list()
         self.D = depot_data['DepotID'].to_list()
         self.C = customer_data['CustomerID'].to_list()
@@ -159,17 +161,14 @@ class Problem:
         self.end = int(parameter_data['Value'][2].replace('T', ''))
         self.T = [t for t in range(self.start, self.end + 1, 1)]
         self.links = [(link_data['Origin'][i], link_data['Destination'][i]) for i in range(len(link_data))]
+        # Index sets
         self.customer_product = [(backlog_data['Customer'][i], backlog_data['Product'][i]) for i in
                                  range(len(backlog_data))]
         self.supplier_product = [(production_data['Supplier'][i], production_data['Product'][i])
                                  for i in range(len(production_data))]
-        self.demand_set = []
-        for i in range(len(demand_data)):
-            self.demand_set.append(
-                (demand_data['Customer'][i], demand_data['Product'][i],
-                 int(demand_data['Time'][i].replace('T', ''))))
+        self.demand_set = [(demand_data['Customer'][i], demand_data['Product'][i],
+                            int(demand_data['Time'][i].replace('T', ''))) for i in range(len(demand_data))]
 
-        # Sets die nodig zijn voor de decision variables
         self.link_product_time = []
         for a in self.links:
             for p in self.P:
@@ -186,19 +185,30 @@ class Problem:
             for i in range(len(production_data)):
                 self.supplier_product_time.append((production_data['Supplier'][i], production_data['Product'][i], t))
 
+        self.depot_time = []
+        for d in self.D:
+            for t in self.T:
+                self.depot_time.append((d, t))
+
         self.depot_product_time = []
         for d in self.D:
             for p in self.P:
                 for t in self.T:
                     self.depot_product_time.append((d, p, t))
 
-        self.depot_time = []
-        for d in self.D:
-            for t in self.T:
-                self.depot_time.append((d, t))
+        self.customer_product_time = []
+        for c in self.C:
+            for p in self.P:
+                for t in self.T:
+                    self.customer_product_time.append((c, p, t))
 
-        # Nu we de sets hebben gemaakt gaan we door met de parameters aan te maken
-        # De distance is hier ook al aangemaakt
+        self.dc_product_time = []
+        for i in self.D_and_C:
+            for p in self.P:
+                for t in [0] + self.T:
+                    self.dc_product_time.append((i, p, t))
+
+        # Parameter/data sets
         # --------------------------------------------------------------------------------------
         self.holding_cost = {self.D[i]: depot_data['Holding Cost'][i] for i in range(len(self.D))}
         self.capacity = {self.D[i]: depot_data['Capacity'][i] for i in range(len(self.D))}
@@ -222,35 +232,17 @@ class Problem:
         self.max_prod = {self.supplier_product[i]: production_data['Maximum'][i] for i in
                          range(len(production_data))}
 
-        self.cum_demand = {}
-        for c in self.C:
-            self.cum_demand[c] = [round(sum(self.demand[c, 'P1', f] for f in range(self.start, t + 1)
-                                            if (c, 'P1', f) in self.demand_set), 2) for t in self.T]
+        self.cum_demand = {(c, p, t): sum(self.demand[c, p, f] for f in range(self.start, t + 1)
+                                          if (c, p, f) in self.demand_set) for (c, p, t) in self.customer_product_time}
 
         self.solution = {
             'x': {},
             'k': {},
             'l': {},
             'v': {},
-            'r': {}
+            'r': {},
+            'I': {}
         }
-
-    # Function that determines inventory of product p at node i at time t
-    def inventory(self, i, p, t):
-        incoming = sum(
-            sum(self.solution['x'][j, i, p, str((f - self.duration[j, i]))] for f in range(self.start, t + 1) if
-                f - self.duration[j, i] >= self.start)
-            for j
-            in self.S_and_D if (j, i) in self.links)
-        if i not in self.D:
-            # i is a customer, so no outgoing product
-            return incoming
-        else:
-            # i is a depot
-            outgoing = sum(
-                sum(self.solution['x'][i, j, p, str(f)] for f in range(self.start, t + 1)) for j in self.D_and_C if
-                (i, j) in self.links)
-            return incoming - outgoing
 
     # Function that updates this problem object's solution based on a solution file
     def read_solution(self, instance_name):
@@ -267,24 +259,47 @@ class Problem:
         k = {}
         for link in self.links:
             if self.solution['l'][link] == 1:
-                k[link] = [int(self.solution['k'][link + (str(t),)]) for t in self.T]
+                k[link] = [round(self.solution['k'][link + (str(t),)]) for t in self.T]
+        print()
+        print('Amount of trucks sent over each link at each point in time:')
+        print('-' * 70)
         for link, trucks in k.items():
             print(link, trucks)
 
-    def log_solution(self, display, draw_settings):
+    def log_backlog(self):
+        total_backlog_penalty = 0
+        print()
+        print('Backlog overview:')
+        print('-' * 70)
+        for c, p, t in self.customer_product_time:
+            print(c, p, t)
+            print('-' * 70)
+            print('Total demand:', self.cum_demand[c, p, t])
+            print('Inventory:', self.solution['I'][c, p, str(t)])
+            extra_penalty = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
+            print('Incurred penalty:', extra_penalty)
+            print('-' * 70)
+            total_backlog_penalty += extra_penalty
+        print(total_backlog_penalty)
+
+    def log_solution(self, display=None, draw_settings=None):
+        print()
+        print('Solution overview:')
+        print('-' * 70)
         for t in self.T:
-            display.draw(t, draw_settings)
+            if display:
+                display.draw(t, draw_settings)
             print('Time', t)
             print('-' * 70)
             # Depot inventory
             for d in self.D:
-                I = self.inventory(d, 'P1', t)
-                print(d, '| Inventory:', round(I, 2), '(Capacity', str(round(self.capacity[d] /
-                                                                             self.product_volume['P1'], 2)) + ')')
+                print(d, '| Inventory:', round(self.solution['I'][d, 'P1', str(t)], 2), '(Capacity',
+                      str(round(self.capacity[d] /
+                                self.product_volume['P1'], 2)) + ')')
             # Customer inventory
             for c in self.C:
-                I = self.inventory(c, 'P1', t)
-                print(c, '| Inventory:', round(I, 2))
+                print(c, '| Inventory:', round(self.solution['I'][c, 'P1', str(t)], 2),
+                      'Cumulative demand:', self.cum_demand[c, 'P1', t])
 
             print('-' * 70)
             # Supplier production
@@ -300,7 +315,8 @@ class Problem:
                     if i is not j:
                         transport = self.solution['x'][(i, j, 'P1', str(t))]
                         if transport > 0:
-                            print(i, '->', j, '| Units:', round(transport, 2))
+                            print(i, '->', j, '| Units:', round(transport, 2),
+                                  'Trucks:', round(self.solution['k'][i, j, str(t)]))
             print('-' * 70)
             # Arriving transport
             print('Arriving transport:')
@@ -312,7 +328,103 @@ class Problem:
                             if f + self.duration[(i, j)] == t:
                                 transport = self.solution['x'][(i, j, 'P1', str(f))]
                                 if transport > 0:
-                                    print(i, '->', j, '| Units:', round(transport, 2), '(Sent at time', str(f) + ')')
+                                    print(i, '->', j, '| Units:', round(transport, 2),
+                                          'Trucks:', round(self.solution['k'][i, j, str(f)]), '(Sent at time',
+                                          str(f) + ')')
+
+            input('Press enter to continue..')
+            print()
+
+    # Function that outputs the buildup of different cost types
+    def log_objective(self):
+        print()
+        print('Objective overview:')
+        print('-' * 70)
+        # Opening costs
+        tot_opening_costs = 0
+        for link in self.links:
+            if self.solution['l'][link] == 1:
+                extra_opening_cost = self.opening_cost[link]
+                print(link, '| Cost:', extra_opening_cost)
+                tot_opening_costs += extra_opening_cost
+        print('Total opening costs:', round(tot_opening_costs, 2))
+        print('-' * 70)
+        # Capacity costs
+        tot_capacity_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
+                print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:', self.capacity_cost[link],
+                      '| Total cost:', round(extra_capacity_cost, 2))
+                tot_capacity_costs += extra_capacity_cost
+        print('Total capacity costs:', round(tot_capacity_costs, 2))
+        print('-' * 70)
+        # Distance costs
+        tot_distance_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                extra_distance_cost = total_trucks_sent * self.distance[link]
+                print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
+                      '| Cost per:', round(self.distance[link], 2), '| Total cost:', round(extra_distance_cost, 2))
+                tot_distance_costs += extra_distance_cost
+        print('Total distance costs:', round(tot_distance_costs, 2))
+        print('-' * 70)
+        # Holding costs
+        tot_holding_costs = 0
+        for d in self.D:
+            print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
+            for p in self.P:
+                print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
+                                             for t in self.T])
+                extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
+                                                                 * self.product_volume[p] for t in self.T])
+                print(d, p, '| Total inventory:',
+                      sum([round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2) for t in self.T]),
+                      '| Total cost:', round(extra_holding_cost, 2))
+                tot_holding_costs += extra_holding_cost
+        print('Total holding costs:', round(tot_holding_costs, 2))
+        print('-' * 70)
+        # Backlog costs
+        tot_backlog_costs = 0
+        for c, p, t in self.customer_product_time:
+            extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
+            tot_backlog_costs += extra_backlog
+        print('Total backlog costs:', round(tot_backlog_costs, 2))
+        print('-' * 70)
+
+    def log_depot(self, d):
+        for t in self.T:
+            print('Time', t)
+            print('-' * 70)
+            # Depot inventory
+            print(d, '| Inventory:', round(self.solution['I'][d, 'P1', str(t)], 2),
+                  '(Capacity', str(round(self.capacity[d] / self.product_volume['P1'], 2)) + ')')
+            print('-' * 70)
+            # Outgoing transport
+            print('Outgoing transport:')
+            total_outgoing = 0
+            for j in self.D_and_C:
+                if d != j:
+                    transport = self.solution['x'][(d, j, 'P1', str(t))]
+                    if transport > 0:
+                        total_outgoing += transport
+                        print(d, '->', j, '| Units:', round(transport, 2))
+            print('Total outgoing units:', round(total_outgoing, 2))
+            print('-' * 70)
+            # Arriving transport
+            print('Arriving transport:')
+            total_incoming = 0
+            for f in range(1, t + 1):
+                for j in self.S_and_D:
+                    if d != j:
+                        # Check if transport would arrive now
+                        if f + self.duration[(j, d)] == t:
+                            transport = self.solution['x'][(j, d, 'P1', str(f))]
+                            if transport > 0:
+                                total_incoming += transport
+                                print(j, '->', d, '| Units:', round(transport, 2), '(Sent at time', str(f) + ')')
+            print('Total incoming units:', round(total_incoming, 2))
 
             input('Press enter to continue..')
             print()

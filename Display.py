@@ -24,9 +24,10 @@ class Display:
         if settings:
             for link in self.problem.links:
                 if settings['show_capacities']:
-                    v = self.problem.solution['v'][link]
-                    if v > 0:
-                        annotate_link(link, str(round(v, 2)))
+                    if link in self.problem.solution['v']:
+                        v = self.problem.solution['v'][link]
+                        if v > 0:
+                            annotate_link(link, str(round(v, 2)))
                 if settings['show_trucks']:
                     link_time = link + (str(t),)
                     k = self.problem.solution['k'][link_time]
