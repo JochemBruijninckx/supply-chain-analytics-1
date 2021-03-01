@@ -65,7 +65,8 @@ class Model:
                                         for d, t in problem.depot_time)
 
         # Backlog costs
-        tot_backlog_cost += gb.quicksum(problem.backlog_pen[c, p] * (I[c, p, t] - problem.cum_demand[c, p, t]) ** 2
+        if not settings['perfect_delivery']:
+            tot_backlog_cost += gb.quicksum(problem.backlog_pen[c, p] * (I[c, p, t] - problem.cum_demand[c, p, t]) ** 2
                                         for c, p, t in problem.customer_product_time)
 
         mdl.setObjective(tot_opening_cost + tot_capacity_cost + tot_distance_cost + tot_holding_cost + tot_backlog_cost,
@@ -74,10 +75,11 @@ class Model:
         # Constraints
         # --------------------------------------------------------------------------------------
         # Linking constraint for opening of links
-        mdl.addConstrs(
-            (10000 * l[i, j] >= v[i, j] for i, j in problem.links),
-            name='Links must be opened to procure capacity'
-        )
+        if not settings['all_links_open']:
+            mdl.addConstrs(
+                (10000 * l[i, j] >= v[i, j] for i, j in problem.links),
+                name='Links must be opened to procure capacity'
+            )
         # Truck capacity on links
         mdl.addConstrs(
             (k[i, j, t] <= v[i, j] for i, j, t in problem.link_time),
@@ -92,14 +94,14 @@ class Model:
         )
         # Minimum production constraint for suppliers
         mdl.addConstrs(
-            (gb.quicksum(x[s, j, p, t] for j in problem.D_and_C) >= problem.min_prod[s, p] * r[s, p, t]
-             for s, p, t in problem.supplier_product_time),
+            (gb.quicksum(x[s, j, p, t] for j in problem.D_and_C if (s, j) in problem.links) >=
+             problem.min_prod[s, p] * r[s, p, t] for s, p, t in problem.supplier_product_time),
             name='Minimum required production if supplier used'
         )
         # Maximum production constraint for suppliers
         mdl.addConstrs(
-            (gb.quicksum(x[s, j, p, t] for j in problem.D_and_C) <= problem.max_prod[s, p] * r[s, p, t]
-             for s, p, t in problem.supplier_product_time),
+            (gb.quicksum(x[s, j, p, t] for j in problem.D_and_C if (s, j) in problem.links) <=
+             problem.max_prod[s, p] * r[s, p, t] for s, p, t in problem.supplier_product_time),
             name='Maximum allowed production if supplier used'
         )
         # Capacity constraint for depots
@@ -110,9 +112,9 @@ class Model:
         )
         # Cannot transport more from depots than is in their inventories
         mdl.addConstrs(
-            (gb.quicksum(x[d, j, p, t] for j in problem.D_and_C if d != j) <=
+            (gb.quicksum(x[d, j, p, t] for j in problem.D_and_C if (d, j) in problem.links) <=
              I[d, p, t - 1] + gb.quicksum(x[j, d, p, t - problem.duration[j, d]] for j in problem.S_and_D
-                                          if j != d and t - problem.duration[j, d] >= problem.start)
+                                          if (j, d) in problem.links and t - problem.duration[j, d] >= problem.start)
              for d, p, t in problem.depot_product_time),
             name='Outgoing transport from depot cannot exceed inventory'
         )
@@ -120,14 +122,15 @@ class Model:
         mdl.addConstrs(
             (I[d, p, t] == I[d, p, t - 1]
              + gb.quicksum(x[j, d, p, t - problem.duration[j, d]] for j in problem.S_and_D
-                           if j != d and t - problem.duration[j, d] >= problem.start)
-             - gb.quicksum(x[d, j, p, t] for j in problem.D_and_C if j != d)
+                           if (j, d) in problem.links and t - problem.duration[j, d] >= problem.start)
+             - gb.quicksum(x[d, j, p, t] for j in problem.D_and_C if (d, j) in problem.links)
              for d, p, t in problem.depot_product_time),
             name='Depot inventory flow constraint'
         )
         mdl.addConstrs(
-            (I[c, p, t] == I[c, p, t - 1] + gb.quicksum(x[i, c, p, t - problem.duration[i, c]] for i in problem.S_and_D
-                                                        if t - problem.duration[i, c] >= problem.start)
+            (I[c, p, t] == I[c, p, t - 1]
+             + gb.quicksum(x[i, c, p, t - problem.duration[i, c]] for i in problem.S_and_D
+                           if t - problem.duration[i, c] >= problem.start and (i, c) in problem.links)
              for c, p, t in problem.customer_product_time),
             name='Customer inventory flow constraint'
         )
@@ -142,15 +145,21 @@ class Model:
             name='Final customer inventory must match cumulative demand'
         )
 
+        if settings['perfect_delivery']:
+            mdl.addConstrs(
+                (I[c, p, t] == problem.cum_demand[c, p, t] for c, p, t in problem.demand_set),
+                name='Perfect delivery constraint'
+            )
+
         # Generate model
         mdl.update()
-        mdl.optimize()
-
-        print('Opening cost:', tot_opening_cost.getValue())
-        print('Capacity cost:', tot_capacity_cost.getValue())
-        print('Distance cost:', tot_distance_cost.getValue())
-        print('Holding cost:', tot_holding_cost.getValue())
-        print('Backlog cost:', tot_backlog_cost.getValue())
+        # mdl.optimize()
+        #
+        # print('Opening cost:', tot_opening_cost.getValue())
+        # print('Capacity cost:', tot_capacity_cost.getValue())
+        # print('Distance cost:', tot_distance_cost.getValue())
+        # print('Holding cost:', tot_holding_cost.getValue())
+        # print('Backlog cost:', tot_backlog_cost.getValue())
         self.mdl = mdl
 
     # Solve model and save solution to a solution file

@@ -29,6 +29,7 @@ def heuristic(problem):
     relaxed_model.solve(problem.instance_name + '_relaxed')
     # Load the solution into our problem object
     problem.read_solution(problem.instance_name + '_relaxed')
+    problem.display()
     drop_links(problem)
     # Construct bounds to be used in reduced problem
     bounds = {
