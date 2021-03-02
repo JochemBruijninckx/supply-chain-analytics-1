@@ -241,7 +241,8 @@ class Problem:
             'l': {},
             'v': {},
             'r': {},
-            'I': {}
+            'I': {},
+            'z': {}
         }
 
     # Function that updates this problem object's solution based on a solution file
@@ -379,8 +380,8 @@ class Problem:
                                              for t in self.T])
                 extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
                                                                  * self.product_volume[p] for t in self.T])
-                print(d, p, '| Total inventory:',
-                      sum([round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2) for t in self.T]),
+                print(d, p, '| Total inventory:', round(sum([round(self.solution['I'][d, p, str(t)]
+                                                                   * self.product_volume[p], 2) for t in self.T]), 2),
                       '| Total cost:', round(extra_holding_cost, 2))
                 tot_holding_costs += extra_holding_cost
         print('Total holding costs:', round(tot_holding_costs, 2))
@@ -391,6 +392,15 @@ class Problem:
             extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             tot_backlog_costs += extra_backlog
         print('Total backlog costs:', round(tot_backlog_costs, 2))
+        print('-' * 70)
+        tot_objective = tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
+        print('Total opening costs  |', round(tot_opening_costs, 2))
+        print('Total capacity costs |', round(tot_capacity_costs, 2))
+        print('Total distance costs |', round(tot_distance_costs, 2))
+        print('Total holding costs  |', round(tot_holding_costs, 2))
+        print('Total backlog costs  |', round(tot_backlog_costs, 2))
+        print('-' * 70)
+        print('Total costs          |', round(tot_objective, 2))
         print('-' * 70)
 
     def log_depot(self, d):

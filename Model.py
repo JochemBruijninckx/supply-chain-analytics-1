@@ -5,10 +5,10 @@ class Model:
     def __init__(self, problem, settings=None, bounds=None):
         if settings is None:
             settings = {
-                'all_links_open': False,
-                'non_integer_trucks': False,
-                'perfect_delivery': False,
             }
+        for setting in ['all_links_open', 'non_integer_trucks', 'perfect_delivery', 'linear_backlog_approx']:
+            if setting not in settings.keys():
+                settings[setting] = False
         if bounds is None:
             bounds = {}
 
@@ -28,6 +28,8 @@ class Model:
         else:
             k = mdl.addVars(problem.link_time, vtype=gb.GRB.INTEGER, lb=0, name='k')
             v = mdl.addVars(problem.links, vtype=gb.GRB.INTEGER, lb=0, name='v')
+        if settings['linear_backlog_approx']:
+            z = mdl.addVars(problem.customer_product_time, vtype=gb.GRB.CONTINUOUS, lb=0, name='z')
 
         I = mdl.addVars(problem.dc_product_time, vtype=gb.GRB.CONTINUOUS, lb=0, name='I')
 
@@ -66,8 +68,13 @@ class Model:
 
         # Backlog costs
         if not settings['perfect_delivery']:
-            tot_backlog_cost += gb.quicksum(problem.backlog_pen[c, p] * (I[c, p, t] - problem.cum_demand[c, p, t]) ** 2
-                                        for c, p, t in problem.customer_product_time)
+            if settings['linear_backlog_approx']:
+                tot_backlog_cost += gb.quicksum(problem.backlog_pen[c, p] * z[c, p, t]
+                                                for c, p, t in problem.customer_product_time)
+            else:
+                tot_backlog_cost += gb.quicksum(
+                    problem.backlog_pen[c, p] * (I[c, p, t] - problem.cum_demand[c, p, t]) ** 2
+                    for c, p, t in problem.customer_product_time)
 
         mdl.setObjective(tot_opening_cost + tot_capacity_cost + tot_distance_cost + tot_holding_cost + tot_backlog_cost,
                          gb.GRB.MINIMIZE)
@@ -149,6 +156,15 @@ class Model:
             mdl.addConstrs(
                 (I[c, p, t] == problem.cum_demand[c, p, t] for c, p, t in problem.demand_set),
                 name='Perfect delivery constraint'
+            )
+
+        # Tangent line constraints in case of linear backlog approximation
+        if settings['linear_backlog_approx']:
+            boundary = 5
+            mdl.addConstrs(
+                (z[c, p, t] >= 2 * w * (I[c, p, t] - problem.cum_demand[c, p, t]) - w ** 2
+                 for c, p, t in problem.customer_product_time
+                 for w in range(-boundary, boundary + 1))
             )
 
         # Generate model
