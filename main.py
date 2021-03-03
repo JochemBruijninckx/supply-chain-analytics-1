@@ -2,21 +2,34 @@ from Problem import Problem, gen_instance
 from Solver import *
 
 
-# Settings
+# Task to run
 # --------------------------------------------------------------------------------------
-instance_name = 404    # Enter a number to generate a random instance
+instance_name = 'small_data_set'    # Enter a number to generate a random instance
 method = 'heuristic'                     # Options are 'read', 'solve', 'heuristic'
+
+# Task settings (only used if method is 'heuristic')
+# --------------------------------------------------------------------------------------
+create_initial_solution = True
+heuristic_settings = {
+    'step_1': {'epsilon': 0.001},
+    'step_2': {
+        'start_capacity': 2.5,
+        'capacity_step': 0.5
+    },
+    'step_3': {},
+    'step_4': {'epsilon': 0.01}
+}
 
 # Function calls
 # --------------------------------------------------------------------------------------
 if instance_name not in ['small_data_set', 'large_data_set']:
     # This function can be called to generate an .xlsx instance file
     gen_instance(seed=int(instance_name),
-                 num_s=7,
-                 num_d=12,
+                 num_s=10,
+                 num_d=10,
                  num_c=20,
                  num_p=1,
-                 T=40)
+                 T=20)
     instance_name = str(instance_name)
 
 # Read and create problem
@@ -28,7 +41,10 @@ if method == 'read':
 elif method == 'solve':
     solve(problem)
 elif method == 'heuristic':
-    heuristic(problem, create_initial_solution=True)
+    heuristic(problem, heuristic_settings, create_initial_solution)
 
 # Log functions for solution
 # --------------------------------------------------------------------------------------
+problem.log_objective()
+problem.display()
+input('Press enter to exit..')

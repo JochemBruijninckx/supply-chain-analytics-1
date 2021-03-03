@@ -13,7 +13,7 @@ def solve(problem, settings=None, bounds=None):
     problem.read_solution(problem.instance_name)
 
 
-def heuristic(problem, create_initial_solution=True):
+def heuristic(problem, settings, create_initial_solution=True):
     # Step 1 - Create or load initial solution.
     # --------------------------------------------------------------------------------------
     print()
@@ -29,7 +29,7 @@ def heuristic(problem, create_initial_solution=True):
         })
         relaxed_model.write(problem.instance_name + '_relaxed')
         relaxed_model.solve(problem.instance_name + '_relaxed', {
-            'gap': 0.1
+            'gap': settings['step_1']['epsilon']
         })
     else:
         print('Step 1 | Loading initial solution')
@@ -44,11 +44,11 @@ def heuristic(problem, create_initial_solution=True):
     print()
     print('Step 2 | Mass link dropping (current objective', str(round(current_objective, 2)) + ')')
     print('-' * 70)
-    start_capacity = 3
-    step_size = 0.25
+    start_capacity = settings['step_2']['start_capacity']
+    capacity_step = settings['step_2']['capacity_step']
     current_capacity = start_capacity
     while current_capacity >= 0:
-        step = round((start_capacity - current_capacity) / step_size)
+        step = round((start_capacity - current_capacity) / capacity_step)
         # Create alternative problem in which all low-capacity links are dropped
         alternative_problem = copy.deepcopy(original_problem)
         drop_links(alternative_problem, current_capacity)
@@ -64,7 +64,7 @@ def heuristic(problem, create_initial_solution=True):
         })
         # If the solution to the alternative model is an improvement, use it as new starting point (skip to Step 3)
         if alternative_objective < current_objective:
-            print('(' + str(step + 1) + '/' + str(round(start_capacity / step_size)) + ')',
+            print('(' + str(step + 1) + '/' + str(round(start_capacity / capacity_step)) + ')',
                   '| Found improvement by dropping all links with capacity <', current_capacity)
             current_objective = alternative_objective
             problem = alternative_problem
@@ -73,9 +73,9 @@ def heuristic(problem, create_initial_solution=True):
             alternative_problem.display()
             break
         else:
-            print('(' + str(step + 1) + '/' + str(round(start_capacity / step_size)) + ')',
+            print('(' + str(step + 1) + '/' + str(round(start_capacity / capacity_step)) + ')',
                   '| Rejected dropping all links with capacity <', current_capacity)
-            current_capacity -= step_size
+            current_capacity -= capacity_step
     # Step 3 - Dropping individual links
     # --------------------------------------------------------------------------------------
     found_improvement = True
@@ -139,12 +139,10 @@ def heuristic(problem, create_initial_solution=True):
         'linear_backlog_approx': True
     }, bounds=bounds)
     reduced_model.solve(problem.instance_name, {
-        'gap': 0.1
+        'gap': settings['step_4']['epsilon']
     })
     # Load the feasible solution into our problem object
     problem.read_solution(problem.instance_name)
-    problem.display()
-    input('Press enter to exit..')
 
 
 def drop_link(problem, link):
