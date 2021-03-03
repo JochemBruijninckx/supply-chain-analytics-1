@@ -4,7 +4,7 @@ from Solver import *
 
 # Settings
 # --------------------------------------------------------------------------------------
-instance_name = 'large_data_set'    # Enter a number to generate a random instance
+instance_name = 404    # Enter a number to generate a random instance
 method = 'heuristic'                     # Options are 'read', 'solve', 'heuristic'
 
 # Function calls
@@ -12,11 +12,11 @@ method = 'heuristic'                     # Options are 'read', 'solve', 'heurist
 if instance_name not in ['small_data_set', 'large_data_set']:
     # This function can be called to generate an .xlsx instance file
     gen_instance(seed=int(instance_name),
-                 num_s=4,
-                 num_d=8,
-                 num_c=8,
+                 num_s=7,
+                 num_d=12,
+                 num_c=20,
                  num_p=1,
-                 T=20)
+                 T=40)
     instance_name = str(instance_name)
 
 # Read and create problem

@@ -165,8 +165,8 @@ class Model:
 
         # Tangent line constraints in case of linear backlog approximation
         if settings['linear_backlog_approx']:
-            boundary = 5
-            delta = 0.25
+            boundary = 2.5
+            delta = 0.5
             mdl.addConstrs(
                 (z[c, p, t] >= 2 * w * (I[c, p, t] - problem.cum_demand[c, p, t]) - w ** 2
                  for c, p, t in problem.customer_product_time
@@ -185,10 +185,18 @@ class Model:
         self.mdl = mdl
 
     # Solve model and save solution to a solution file
-    def solve(self, instance_name=None):
+    def solve(self, instance_name=None, stopping_criteria=None):
+        if stopping_criteria is not None:
+            for key, value in stopping_criteria.items():
+                if key == 'objective':
+                    self.mdl.setParam('BestObjStop', value)
+                elif key == 'bound':
+                    self.mdl.setParam('BestBdStop', value)
+                elif key == 'gap':
+                    self.mdl.setParam('MIPGap', value)
         # Optimize
         self.mdl.optimize()
-        if self.mdl.status != 2:
+        if self.mdl.status not in [2, 11, 15] or self.mdl.getAttr('SolCount') == 0:
             return np.inf
         # Save solution
         if instance_name:
