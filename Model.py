@@ -175,13 +175,6 @@ class Model:
 
         # Generate model
         mdl.update()
-        # mdl.optimize()
-        #
-        # print('Opening cost:', tot_opening_cost.getValue())
-        # print('Capacity cost:', tot_capacity_cost.getValue())
-        # print('Distance cost:', tot_distance_cost.getValue())
-        # print('Holding cost:', tot_holding_cost.getValue())
-        # print('Backlog cost:', tot_backlog_cost.getValue())
         self.mdl = mdl
 
     # Solve model and save solution to a solution file

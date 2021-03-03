@@ -11,6 +11,7 @@ def solve(problem, settings=None, bounds=None):
     model.solve(problem.instance_name)
     # Load the solution into our problem object
     problem.read_solution(problem.instance_name)
+    return problem
 
 
 def heuristic(problem, settings, create_initial_solution=True):
@@ -26,7 +27,7 @@ def heuristic(problem, settings, create_initial_solution=True):
             'non_integer_trucks': True,
             'linear_backlog_approx': False,
             'perfect_delivery': True
-        })
+        }, surpress_logs=settings['step_1']['surpress_gurobi'])
         relaxed_model.write(problem.instance_name + '_relaxed')
         relaxed_model.solve(problem.instance_name + '_relaxed', {
             'gap': settings['step_1']['epsilon']
@@ -137,12 +138,13 @@ def heuristic(problem, settings, create_initial_solution=True):
     # Create reduced, non-relaxed model
     reduced_model = Model(problem, {
         'linear_backlog_approx': True
-    }, bounds=bounds)
+    }, bounds=bounds, surpress_logs=settings['step_4']['surpress_gurobi'])
     reduced_model.solve(problem.instance_name, {
         'gap': settings['step_4']['epsilon']
     })
     # Load the feasible solution into our problem object
     problem.read_solution(problem.instance_name)
+    return problem
 
 
 def drop_link(problem, link):
@@ -212,8 +214,8 @@ def get_alternative_links(problem, destination, dropped_link, alternative_links=
     new_links = []
     for i in problem.S_and_D:
         if (i, destination) not in alternative_links:
-            if (i, destination) in problem.links and problem.solution['v'][(i, destination)] > 0 and (
-            i, destination) != dropped_link:
+            if (i, destination) in problem.links and problem.solution['v'][(i, destination)] > 0\
+                    and (i, destination) != dropped_link:
                 new_links += [(i, destination)]
     alternative_links += new_links
     for new_link in new_links:

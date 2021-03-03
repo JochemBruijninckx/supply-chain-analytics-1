@@ -363,7 +363,7 @@ class Problem:
             print()
 
     # Function that outputs the buildup of different cost types
-    def log_objective(self):
+    def log_objective(self, summary_only=False):
         print()
         print('Objective overview:')
         print('-' * 70)
@@ -373,53 +373,65 @@ class Problem:
             if link in self.solution['l'].keys():
                 if self.solution['l'][link] == 1:
                     extra_opening_cost = self.opening_cost[link]
-                    print(link, '| Cost:', extra_opening_cost)
+                    if not summary_only:
+                        print(link, '| Cost:', extra_opening_cost)
                     tot_opening_costs += extra_opening_cost
-        print('Total opening costs:', round(tot_opening_costs, 2))
-        print('-' * 70)
+        if not summary_only:
+            print('Total opening costs:', round(tot_opening_costs, 2))
+            print('-' * 70)
         # Capacity costs
         tot_capacity_costs = 0
         for link in self.links:
             if self.solution['v'][link] > 0:
                 extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
-                print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:', self.capacity_cost[link],
-                      '| Total cost:', round(extra_capacity_cost, 2))
+                if not summary_only:
+                    print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:',
+                          self.capacity_cost[link], '| Total cost:', round(extra_capacity_cost, 2))
                 tot_capacity_costs += extra_capacity_cost
-        print('Total capacity costs:', round(tot_capacity_costs, 2))
-        print('-' * 70)
+        if not summary_only:
+            print('Total capacity costs:', round(tot_capacity_costs, 2))
+            print('-' * 70)
         # Distance costs
         tot_distance_costs = 0
         for link in self.links:
             if self.solution['v'][link] > 0:
                 total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
                 extra_distance_cost = total_trucks_sent * self.distance[link]
-                print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
-                      '| Cost per:', round(self.distance[link], 2), '| Total cost:', round(extra_distance_cost, 2))
+                if not summary_only:
+                    print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
+                          '| Cost per:', round(self.distance[link], 2), '| Total cost:', round(extra_distance_cost, 2))
                 tot_distance_costs += extra_distance_cost
-        print('Total distance costs:', round(tot_distance_costs, 2))
-        print('-' * 70)
+        if not summary_only:
+            print('Total distance costs:', round(tot_distance_costs, 2))
+            print('-' * 70)
         # Holding costs
         tot_holding_costs = 0
         for d in self.D:
-            print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
+            if not summary_only:
+                print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
             for p in self.P:
-                print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
-                                             for t in self.T])
+                if not summary_only:
+                    print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
+                                                 for t in self.T])
                 extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
                                                                  * self.product_volume[p] for t in self.T])
-                print(d, p, '| Total inventory:', round(sum([round(self.solution['I'][d, p, str(t)]
-                                                                   * self.product_volume[p], 2) for t in self.T]), 2),
-                      '| Total cost:', round(extra_holding_cost, 2))
+                if not summary_only:
+                    print(d, p, '| Total inventory:', round(sum([round(self.solution['I'][d, p, str(t)]
+                                                                       * self.product_volume[p], 2)
+                                                                 for t in self.T]), 2),
+                          '| Total cost:', round(extra_holding_cost, 2))
                 tot_holding_costs += extra_holding_cost
-        print('Total holding costs:', round(tot_holding_costs, 2))
-        print('-' * 70)
+        if not summary_only:
+            print('Total holding costs:', round(tot_holding_costs, 2))
+            print('-' * 70)
         # Backlog costs
         tot_backlog_costs = 0
         for c, p, t in self.customer_product_time:
             extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             tot_backlog_costs += extra_backlog
-        print('Total backlog costs:', round(tot_backlog_costs, 2))
-        print('-' * 70)
+        if not summary_only:
+            print('Total backlog costs:', round(tot_backlog_costs, 2))
+            print('-' * 70)
         tot_objective = tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
         print('Total opening costs  |', round(tot_opening_costs, 2))
         print('Total capacity costs |', round(tot_capacity_costs, 2))
