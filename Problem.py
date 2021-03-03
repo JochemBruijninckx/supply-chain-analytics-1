@@ -49,12 +49,12 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     # Sheet 5 - Links
     origins = ['S' + str(i + 1) for i in range(num_s)] + ['D' + str(i + 1) for i in range(num_d)]
     destinations = ['D' + str(i + 1) for i in range(num_d)] + ['C' + str(i + 1) for i in range(num_c)]
-    link_data = pd.DataFrame(index=pd.MultiIndex.from_product([origins, destinations]),
+    links = [(i, j) for i in origins for j in destinations if i != j]
+    link_data = pd.DataFrame(index=pd.MultiIndex.from_tuples(links),
                              columns=['Opening Cost', 'Capacity Cost', 'Duration'])
     link_data.index.names = ['Origin', 'Destination']
 
     # Determine all distances
-    links = [(i, j) for i in origins for j in destinations]
     locations = pd.concat([supplier_data.iloc[:, :3].rename(columns={'SupplierID': 'Location'}),
                            depot_data.iloc[:, :3].rename(columns={'DepotID': 'Location'}),
                            customer_data.iloc[:, :3].rename(columns={'CustomerID': 'Location'})])
@@ -65,11 +65,11 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     link_index = 0
     for i in origins:
         for j in destinations:
-            opening_cost = round(50 + 100 * np.random.random(), 2)
-            capacity_cost = round(5 + 10 * np.random.random(), 2)
-            duration = np.random.randint(1, 4)
-            link_data.loc[i, j] = [opening_cost, capacity_cost, durations[link_index] + 1]
-            link_index += 1
+            if i != j:
+                opening_cost = round(50 + 100 * np.random.random(), 2)
+                capacity_cost = round(5 + 10 * np.random.random(), 2)
+                link_data.loc[i, j] = [opening_cost, capacity_cost, durations[link_index] + 1]
+                link_index += 1
     print(link_data)
     # Sheet 6 - Demand
     demand_data = pd.DataFrame(index=pd.MultiIndex.from_product([['C' + str(i + 1) for i in range(num_c)],
@@ -470,4 +470,3 @@ class Problem:
     def display(self):
         disp = Display(self)
         disp.draw(0, {'show_capacities': True, 'show_trucks': False, 'show_transport': False, 'show_inventory': False})
-        input('Press enter to continue..')
