@@ -133,7 +133,7 @@ class Problem:
         self.instance_name = instance_name
         cwd = os.getcwd()
         filename = os.path.join(cwd, 'Instances/' + instance_name + '.xlsx')
-        data = pd.read_excel(filename, sheet_name=None)
+        data = pd.read_excel(filename, sheet_name=None, engine='openpyxl')
 
         # Data extraction
         # --------------------------------------------------------------------------------------
@@ -225,6 +225,8 @@ class Problem:
                          a in
                          self.links}
         self.demand = {self.demand_set[i]: demand_data['Amount'][i] for i in range(len(demand_data))}
+        self.cum_demand = {(c, p, t): sum(self.demand[c, p, f] for f in range(self.start, t + 1)
+                                          if (c, p, f) in self.demand_set) for (c, p, t) in self.customer_product_time}
         self.backlog_pen = {self.customer_product[i]: backlog_data['Amount'][i] for i in
                             range(len(backlog_data))}
         self.min_prod = {self.supplier_product[i]: production_data['Minimum'][i] for i in
@@ -232,28 +234,52 @@ class Problem:
         self.max_prod = {self.supplier_product[i]: production_data['Maximum'][i] for i in
                          range(len(production_data))}
 
-        self.cum_demand = {(c, p, t): sum(self.demand[c, p, f] for f in range(self.start, t + 1)
-                                          if (c, p, f) in self.demand_set) for (c, p, t) in self.customer_product_time}
-
-        self.solution = {
-            'x': {},
-            'k': {},
-            'l': {},
-            'v': {},
-            'r': {},
-            'I': {},
-            'z': {}
-        }
+        self.solution = {}
+        self.objective = np.inf
 
     # Function that updates this problem object's solution based on a solution file
     def read_solution(self, instance_name):
         # Read solution
         with open('Solutions/' + instance_name + '.sol', newline='\n') as file:
             reader = csv.reader((line.replace('  ', ' ') for line in file), delimiter=' ')
-            next(reader)  # Skip header
+            header = next(reader)  # Skip header
+            self.objective = header[-1]
             for var, value in reader:
                 name = tuple(var[2:-1].split(','))
+                if var[0] not in self.solution.keys():
+                    self.solution[var[0]] = {}
                 self.solution[var[0]][name] = float(value)
+
+    def compute_objective(self):
+        # Opening + capacity costs
+        tot_opening_costs = 0
+        tot_capacity_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                extra_opening_cost = self.opening_cost[link]
+                tot_opening_costs += extra_opening_cost
+                extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
+                tot_capacity_costs += extra_capacity_cost
+        # Distance costs
+        tot_distance_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                extra_distance_cost = total_trucks_sent * self.distance[link]
+                tot_distance_costs += extra_distance_cost
+        # Holding costs
+        tot_holding_costs = 0
+        for d in self.D:
+            for p in self.P:
+                extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
+                                                                 * self.product_volume[p] for t in self.T])
+                tot_holding_costs += extra_holding_cost
+        # Backlog costs
+        tot_backlog_costs = 0
+        for c, p, t in self.customer_product_time:
+            extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
+            tot_backlog_costs += extra_backlog
+        return tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
 
     # Log the amount of trucks sent over each link at each point in time
     def log_k(self):
@@ -344,10 +370,11 @@ class Problem:
         # Opening costs
         tot_opening_costs = 0
         for link in self.links:
-            if self.solution['l'][link] == 1:
-                extra_opening_cost = self.opening_cost[link]
-                print(link, '| Cost:', extra_opening_cost)
-                tot_opening_costs += extra_opening_cost
+            if link in self.solution['l'].keys():
+                if self.solution['l'][link] == 1:
+                    extra_opening_cost = self.opening_cost[link]
+                    print(link, '| Cost:', extra_opening_cost)
+                    tot_opening_costs += extra_opening_cost
         print('Total opening costs:', round(tot_opening_costs, 2))
         print('-' * 70)
         # Capacity costs

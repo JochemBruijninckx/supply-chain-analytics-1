@@ -1,8 +1,9 @@
 import gurobipy as gb
+import numpy as np
 
 
 class Model:
-    def __init__(self, problem, settings=None, bounds=None):
+    def __init__(self, problem, settings=None, bounds=None, surpress_logs=False):
         if settings is None:
             settings = {
             }
@@ -15,12 +16,16 @@ class Model:
         # Model setup
         # --------------------------------------------------------------------------------------
         mdl = gb.Model()
+        if surpress_logs:
+            mdl.setParam("OutputFlag", 0)
 
         # Variables
         # --------------------------------------------------------------------------------------
         x = mdl.addVars(problem.link_product_time, vtype=gb.GRB.CONTINUOUS, lb=0, name='x')
         r = mdl.addVars(problem.supplier_product_time, vtype=gb.GRB.BINARY, name='r')
-        if not settings['all_links_open']:
+        if settings['all_links_open']:
+            l = mdl.addVars(problem.links, vtype=gb.GRB.BINARY, name='l', lb=1, ub=1)
+        else:
             l = mdl.addVars(problem.links, vtype=gb.GRB.BINARY, name='l')
         if settings['non_integer_trucks']:
             k = mdl.addVars(problem.link_time, vtype=gb.GRB.CONTINUOUS, lb=0, name='k')
@@ -40,8 +45,10 @@ class Model:
                 r[s, p, int(t)].ub = bounds['r'][(s, p, t)]
         if 'v' in bounds:
             for (i, j) in bounds['v'].keys():
-                v[i, j].lb = bounds['v'][(i, j)]['lb']
-                v[i, j].ub = bounds['v'][(i, j)]['ub']
+                if 'lb' in bounds['v'][(i, j)].keys():
+                    v[i, j].lb = bounds['v'][(i, j)]['lb']
+                if 'ub' in bounds['v'][(i, j)].keys():
+                    v[i, j].ub = bounds['v'][(i, j)]['ub']
 
         # Objective
         # --------------------------------------------------------------------------------------
@@ -52,8 +59,7 @@ class Model:
         tot_backlog_cost = gb.QuadExpr()
 
         # Opening costs
-        if not settings['all_links_open']:
-            tot_opening_cost += gb.quicksum(problem.opening_cost[i, j] * l[i, j] for i, j in problem.links)
+        tot_opening_cost += gb.quicksum(problem.opening_cost[i, j] * l[i, j] for i, j in problem.links)
 
         # Capacity costs
         tot_capacity_cost += gb.quicksum(problem.capacity_cost[i, j] * v[i, j] for i, j in problem.links)
@@ -82,11 +88,10 @@ class Model:
         # Constraints
         # --------------------------------------------------------------------------------------
         # Linking constraint for opening of links
-        if not settings['all_links_open']:
-            mdl.addConstrs(
-                (10000 * l[i, j] >= v[i, j] for i, j in problem.links),
-                name='Links must be opened to procure capacity'
-            )
+        mdl.addConstrs(
+            (10000 * l[i, j] >= v[i, j] for i, j in problem.links),
+            name='Links must be opened to procure capacity'
+        )
         # Truck capacity on links
         mdl.addConstrs(
             (k[i, j, t] <= v[i, j] for i, j, t in problem.link_time),
@@ -154,17 +159,18 @@ class Model:
 
         if settings['perfect_delivery']:
             mdl.addConstrs(
-                (I[c, p, t] == problem.cum_demand[c, p, t] for c, p, t in problem.demand_set),
+                (I[c, p, t] == problem.cum_demand[c, p, t] for c, p, t in problem.customer_product_time),
                 name='Perfect delivery constraint'
             )
 
         # Tangent line constraints in case of linear backlog approximation
         if settings['linear_backlog_approx']:
             boundary = 5
+            delta = 0.25
             mdl.addConstrs(
                 (z[c, p, t] >= 2 * w * (I[c, p, t] - problem.cum_demand[c, p, t]) - w ** 2
                  for c, p, t in problem.customer_product_time
-                 for w in range(-boundary, boundary + 1))
+                 for w in np.arange(-boundary, boundary + delta, delta))
             )
 
         # Generate model
@@ -179,11 +185,16 @@ class Model:
         self.mdl = mdl
 
     # Solve model and save solution to a solution file
-    def solve(self, instance_name):
+    def solve(self, instance_name=None):
         # Optimize
         self.mdl.optimize()
+        if self.mdl.status != 2:
+            return np.inf
         # Save solution
-        self.mdl.write('Solutions/' + instance_name + '.sol')
+        if instance_name:
+            self.mdl.write('Solutions/' + instance_name + '.sol')
+        # Return objective value
+        return self.mdl.getObjective().getValue()
 
     def write(self, instance_name):
         self.mdl.write('Instances/' + instance_name + '.lp')
