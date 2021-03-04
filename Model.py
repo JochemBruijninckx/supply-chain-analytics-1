@@ -3,15 +3,16 @@ import numpy as np
 
 
 class Model:
-    def __init__(self, problem, settings=None, bounds=None, surpress_logs=False):
+    def __init__(self, problem, settings=None, bounds=None, surpress_logs=False, parameters=None):
         if settings is None:
-            settings = {
-            }
+            settings = {}
         for setting in ['all_links_open', 'non_integer_trucks', 'perfect_delivery', 'linear_backlog_approx']:
             if setting not in settings.keys():
                 settings[setting] = False
         if bounds is None:
             bounds = {}
+        if parameters is None:
+            parameters = {}
 
         # Model setup
         # --------------------------------------------------------------------------------------
@@ -165,12 +166,17 @@ class Model:
 
         # Tangent line constraints in case of linear backlog approximation
         if settings['linear_backlog_approx']:
-            boundary = 2.5
-            delta = 0.5
+            boundary = parameters['boundary'] if 'boundary' in parameters.keys() else 5
+            delta = parameters['delta'] if 'delta' in parameters.keys() else 1
             mdl.addConstrs(
                 (z[c, p, t] >= 2 * w * (I[c, p, t] - problem.cum_demand[c, p, t]) - w ** 2
                  for c, p, t in problem.customer_product_time
-                 for w in np.arange(-boundary, boundary + delta, delta))
+                 for w in np.arange(-boundary, boundary + delta, delta) if w != 0)
+            )
+            mdl.addConstrs(
+                (z[c, p, t] >= w * (I[c, p, t] - problem.cum_demand[c, p, t])
+                 for c, p, t in problem.customer_product_time
+                 for w in [-delta, delta])
             )
 
         # Generate model

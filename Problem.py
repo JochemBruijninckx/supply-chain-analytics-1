@@ -239,6 +239,7 @@ class Problem:
 
     # Function that updates this problem object's solution based on a solution file
     def read_solution(self, instance_name):
+        self.solution = {}
         # Read solution
         with open('Solutions/' + instance_name + '.sol', newline='\n') as file:
             reader = csv.reader((line.replace('  ', ' ') for line in file), delimiter=' ')
@@ -382,25 +383,28 @@ class Problem:
         # Capacity costs
         tot_capacity_costs = 0
         for link in self.links:
-            if self.solution['v'][link] > 0:
-                extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
-                if not summary_only:
-                    print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:',
-                          self.capacity_cost[link], '| Total cost:', round(extra_capacity_cost, 2))
-                tot_capacity_costs += extra_capacity_cost
+            if link in self.solution['v'].keys():
+                if self.solution['v'][link] > 0:
+                    extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
+                    if not summary_only:
+                        print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:',
+                              self.capacity_cost[link], '| Total cost:', round(extra_capacity_cost, 2))
+                    tot_capacity_costs += extra_capacity_cost
         if not summary_only:
             print('Total capacity costs:', round(tot_capacity_costs, 2))
             print('-' * 70)
         # Distance costs
         tot_distance_costs = 0
         for link in self.links:
-            if self.solution['v'][link] > 0:
-                total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
-                extra_distance_cost = total_trucks_sent * self.distance[link]
-                if not summary_only:
-                    print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
-                          '| Cost per:', round(self.distance[link], 2), '| Total cost:', round(extra_distance_cost, 2))
-                tot_distance_costs += extra_distance_cost
+            if link in self.solution['v'].keys():
+                if self.solution['v'][link] > 0:
+                    total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                    extra_distance_cost = total_trucks_sent * self.distance[link]
+                    if not summary_only:
+                        print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
+                              '| Cost per:', round(self.distance[link], 2), '| Total cost:',
+                              round(extra_distance_cost, 2))
+                    tot_distance_costs += extra_distance_cost
         if not summary_only:
             print('Total distance costs:', round(tot_distance_costs, 2))
             print('-' * 70)
@@ -477,6 +481,39 @@ class Problem:
 
             input('Press enter to continue..')
             print()
+
+    def verify_constraints(self):
+        # 1 - Link opening constraint
+        for link in self.links:
+            if link in self.solution['v'].keys():
+                assert self.solution['l'][link] * 10000 >= self.solution['v'][link], 'Constraint 1 violation'
+        # 2 - Link capacity constraint
+        for link in self.links:
+            if link in self.solution['v'].keys():
+                for t in self.T:
+                    t = str(t)
+                    assert self.solution['k'][link[0], link[1], t] <= self.solution['v'][link]
+        # 3 - Required trucks constraint
+        for i, j in self.links:
+            if (i, j) in self.solution['v'].keys():
+                for t in self.T:
+                    t = str(t)
+                    volume = sum([self.product_volume[p] * self.solution['x'][i, j, p, t] for p in self.P])
+                    assert self.solution['k'][i, j, t] >= round(volume / self.truck_size)
+        # 4 - Min production constraint
+        for s, p, t in self.supplier_product_time:
+            t = str(t)
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
+                              if (s, j) in self.solution['v'].keys()])
+            assert round(production, 2) >= self.min_prod[s, p] * self.solution['r'][s, p, t]
+        # 5 - Max production constraint
+        for s, p, t in self.supplier_product_time:
+            t = str(t)
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
+                              if (s, j) in self.solution['v'].keys()])
+            assert round(production, 2) <= self.max_prod[s, p] * self.solution['r'][s, p, t]
+
+        return
 
     # Call display on this problem's solution showing only opened links and their capacities
     def display(self):
