@@ -49,12 +49,12 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     # Sheet 5 - Links
     origins = ['S' + str(i + 1) for i in range(num_s)] + ['D' + str(i + 1) for i in range(num_d)]
     destinations = ['D' + str(i + 1) for i in range(num_d)] + ['C' + str(i + 1) for i in range(num_c)]
-    link_data = pd.DataFrame(index=pd.MultiIndex.from_product([origins, destinations]),
+    links = [(i, j) for i in origins for j in destinations if i != j]
+    link_data = pd.DataFrame(index=pd.MultiIndex.from_tuples(links),
                              columns=['Opening Cost', 'Capacity Cost', 'Duration'])
     link_data.index.names = ['Origin', 'Destination']
 
     # Determine all distances
-    links = [(i, j) for i in origins for j in destinations]
     locations = pd.concat([supplier_data.iloc[:, :3].rename(columns={'SupplierID': 'Location'}),
                            depot_data.iloc[:, :3].rename(columns={'DepotID': 'Location'}),
                            customer_data.iloc[:, :3].rename(columns={'CustomerID': 'Location'})])
@@ -65,11 +65,11 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     link_index = 0
     for i in origins:
         for j in destinations:
-            opening_cost = round(50 + 100 * np.random.random(), 2)
-            capacity_cost = round(5 + 10 * np.random.random(), 2)
-            duration = np.random.randint(1, 4)
-            link_data.loc[i, j] = [opening_cost, capacity_cost, durations[link_index] + 1]
-            link_index += 1
+            if i != j:
+                opening_cost = round(50 + 100 * np.random.random(), 2)
+                capacity_cost = round(5 + 10 * np.random.random(), 2)
+                link_data.loc[i, j] = [opening_cost, capacity_cost, durations[link_index] + 1]
+                link_index += 1
     print(link_data)
     # Sheet 6 - Demand
     demand_data = pd.DataFrame(index=pd.MultiIndex.from_product([['C' + str(i + 1) for i in range(num_c)],
@@ -133,7 +133,7 @@ class Problem:
         self.instance_name = instance_name
         cwd = os.getcwd()
         filename = os.path.join(cwd, 'Instances/' + instance_name + '.xlsx')
-        data = pd.read_excel(filename, sheet_name=None)
+        data = pd.read_excel(filename, sheet_name=None, engine='openpyxl')
 
         # Data extraction
         # --------------------------------------------------------------------------------------
@@ -225,6 +225,8 @@ class Problem:
                          a in
                          self.links}
         self.demand = {self.demand_set[i]: demand_data['Amount'][i] for i in range(len(demand_data))}
+        self.cum_demand = {(c, p, t): sum(self.demand[c, p, f] for f in range(self.start, t + 1)
+                                          if (c, p, f) in self.demand_set) for (c, p, t) in self.customer_product_time}
         self.backlog_pen = {self.customer_product[i]: backlog_data['Amount'][i] for i in
                             range(len(backlog_data))}
         self.min_prod = {self.supplier_product[i]: production_data['Minimum'][i] for i in
@@ -232,28 +234,53 @@ class Problem:
         self.max_prod = {self.supplier_product[i]: production_data['Maximum'][i] for i in
                          range(len(production_data))}
 
-        self.cum_demand = {(c, p, t): sum(self.demand[c, p, f] for f in range(self.start, t + 1)
-                                          if (c, p, f) in self.demand_set) for (c, p, t) in self.customer_product_time}
-
-        self.solution = {
-            'x': {},
-            'k': {},
-            'l': {},
-            'v': {},
-            'r': {},
-            'I': {},
-            'z': {}
-        }
+        self.solution = {}
+        self.objective = np.inf
 
     # Function that updates this problem object's solution based on a solution file
     def read_solution(self, instance_name):
+        self.solution = {}
         # Read solution
         with open('Solutions/' + instance_name + '.sol', newline='\n') as file:
             reader = csv.reader((line.replace('  ', ' ') for line in file), delimiter=' ')
-            next(reader)  # Skip header
+            header = next(reader)  # Skip header
+            self.objective = header[-1]
             for var, value in reader:
                 name = tuple(var[2:-1].split(','))
+                if var[0] not in self.solution.keys():
+                    self.solution[var[0]] = {}
                 self.solution[var[0]][name] = float(value)
+
+    def compute_objective(self):
+        # Opening + capacity costs
+        tot_opening_costs = 0
+        tot_capacity_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                extra_opening_cost = self.opening_cost[link]
+                tot_opening_costs += extra_opening_cost
+                extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
+                tot_capacity_costs += extra_capacity_cost
+        # Distance costs
+        tot_distance_costs = 0
+        for link in self.links:
+            if self.solution['v'][link] > 0:
+                total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                extra_distance_cost = total_trucks_sent * self.distance[link]
+                tot_distance_costs += extra_distance_cost
+        # Holding costs
+        tot_holding_costs = 0
+        for d in self.D:
+            for p in self.P:
+                extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
+                                                                 * self.product_volume[p] for t in self.T])
+                tot_holding_costs += extra_holding_cost
+        # Backlog costs
+        tot_backlog_costs = 0
+        for c, p, t in self.customer_product_time:
+            extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
+            tot_backlog_costs += extra_backlog
+        return tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
 
     # Log the amount of trucks sent over each link at each point in time
     def log_k(self):
@@ -337,62 +364,78 @@ class Problem:
             print()
 
     # Function that outputs the buildup of different cost types
-    def log_objective(self):
+    def log_objective(self, summary_only=False):
         print()
         print('Objective overview:')
         print('-' * 70)
         # Opening costs
         tot_opening_costs = 0
         for link in self.links:
-            if self.solution['l'][link] == 1:
-                extra_opening_cost = self.opening_cost[link]
-                print(link, '| Cost:', extra_opening_cost)
-                tot_opening_costs += extra_opening_cost
-        print('Total opening costs:', round(tot_opening_costs, 2))
-        print('-' * 70)
+            if link in self.solution['l'].keys():
+                if self.solution['l'][link] == 1:
+                    extra_opening_cost = self.opening_cost[link]
+                    if not summary_only:
+                        print(link, '| Cost:', extra_opening_cost)
+                    tot_opening_costs += extra_opening_cost
+        if not summary_only:
+            print('Total opening costs:', round(tot_opening_costs, 2))
+            print('-' * 70)
         # Capacity costs
         tot_capacity_costs = 0
         for link in self.links:
-            if self.solution['v'][link] > 0:
-                extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
-                print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:', self.capacity_cost[link],
-                      '| Total cost:', round(extra_capacity_cost, 2))
-                tot_capacity_costs += extra_capacity_cost
-        print('Total capacity costs:', round(tot_capacity_costs, 2))
-        print('-' * 70)
+            if link in self.solution['v'].keys():
+                if self.solution['v'][link] > 0:
+                    extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
+                    if not summary_only:
+                        print(link, '| Amount: ', round(self.solution['v'][link], 2), '| Cost per:',
+                              self.capacity_cost[link], '| Total cost:', round(extra_capacity_cost, 2))
+                    tot_capacity_costs += extra_capacity_cost
+        if not summary_only:
+            print('Total capacity costs:', round(tot_capacity_costs, 2))
+            print('-' * 70)
         # Distance costs
         tot_distance_costs = 0
         for link in self.links:
-            if self.solution['v'][link] > 0:
-                total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
-                extra_distance_cost = total_trucks_sent * self.distance[link]
-                print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
-                      '| Cost per:', round(self.distance[link], 2), '| Total cost:', round(extra_distance_cost, 2))
-                tot_distance_costs += extra_distance_cost
-        print('Total distance costs:', round(tot_distance_costs, 2))
-        print('-' * 70)
+            if link in self.solution['v'].keys():
+                if self.solution['v'][link] > 0:
+                    total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                    extra_distance_cost = total_trucks_sent * self.distance[link]
+                    if not summary_only:
+                        print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
+                              '| Cost per:', round(self.distance[link], 2), '| Total cost:',
+                              round(extra_distance_cost, 2))
+                    tot_distance_costs += extra_distance_cost
+        if not summary_only:
+            print('Total distance costs:', round(tot_distance_costs, 2))
+            print('-' * 70)
         # Holding costs
         tot_holding_costs = 0
         for d in self.D:
-            print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
+            if not summary_only:
+                print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
             for p in self.P:
-                print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
-                                             for t in self.T])
+                if not summary_only:
+                    print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
+                                                 for t in self.T])
                 extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
                                                                  * self.product_volume[p] for t in self.T])
-                print(d, p, '| Total inventory:', round(sum([round(self.solution['I'][d, p, str(t)]
-                                                                   * self.product_volume[p], 2) for t in self.T]), 2),
-                      '| Total cost:', round(extra_holding_cost, 2))
+                if not summary_only:
+                    print(d, p, '| Total inventory:', round(sum([round(self.solution['I'][d, p, str(t)]
+                                                                       * self.product_volume[p], 2)
+                                                                 for t in self.T]), 2),
+                          '| Total cost:', round(extra_holding_cost, 2))
                 tot_holding_costs += extra_holding_cost
-        print('Total holding costs:', round(tot_holding_costs, 2))
-        print('-' * 70)
+        if not summary_only:
+            print('Total holding costs:', round(tot_holding_costs, 2))
+            print('-' * 70)
         # Backlog costs
         tot_backlog_costs = 0
         for c, p, t in self.customer_product_time:
             extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             tot_backlog_costs += extra_backlog
-        print('Total backlog costs:', round(tot_backlog_costs, 2))
-        print('-' * 70)
+        if not summary_only:
+            print('Total backlog costs:', round(tot_backlog_costs, 2))
+            print('-' * 70)
         tot_objective = tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
         print('Total opening costs  |', round(tot_opening_costs, 2))
         print('Total capacity costs |', round(tot_capacity_costs, 2))
@@ -439,8 +482,40 @@ class Problem:
             input('Press enter to continue..')
             print()
 
+    def verify_constraints(self):
+        # 1 - Link opening constraint
+        for link in self.links:
+            if link in self.solution['v'].keys():
+                assert self.solution['l'][link] * 10000 >= self.solution['v'][link], 'Constraint 1 violation'
+        # 2 - Link capacity constraint
+        for link in self.links:
+            if link in self.solution['v'].keys():
+                for t in self.T:
+                    t = str(t)
+                    assert self.solution['k'][link[0], link[1], t] <= self.solution['v'][link]
+        # 3 - Required trucks constraint
+        for i, j in self.links:
+            if (i, j) in self.solution['v'].keys():
+                for t in self.T:
+                    t = str(t)
+                    volume = sum([self.product_volume[p] * self.solution['x'][i, j, p, t] for p in self.P])
+                    assert self.solution['k'][i, j, t] >= round(volume / self.truck_size)
+        # 4 - Min production constraint
+        for s, p, t in self.supplier_product_time:
+            t = str(t)
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
+                              if (s, j) in self.solution['v'].keys()])
+            assert round(production, 2) >= self.min_prod[s, p] * self.solution['r'][s, p, t]
+        # 5 - Max production constraint
+        for s, p, t in self.supplier_product_time:
+            t = str(t)
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
+                              if (s, j) in self.solution['v'].keys()])
+            assert round(production, 2) <= self.max_prod[s, p] * self.solution['r'][s, p, t]
+
+        return
+
     # Call display on this problem's solution showing only opened links and their capacities
     def display(self):
         disp = Display(self)
         disp.draw(0, {'show_capacities': True, 'show_trucks': False, 'show_transport': False, 'show_inventory': False})
-        input('Press enter to continue..')

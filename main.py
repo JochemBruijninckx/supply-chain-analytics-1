@@ -1,25 +1,61 @@
 from Problem import Problem, gen_instance
 from Solver import *
 
-# This function can be called to generate an .xlsx instance file
-# seed = 212
-# gen_instance(seed=seed,
-#              num_s=2,
-#              num_d=1,
-#              num_c=2,
-#              num_p=1,
-#              T=20)
+
+# Task to run
+# --------------------------------------------------------------------------------------
+instance_name = 'large_data_set'   # Enter a number to generate a random instance
+method = 'read'                     # Options are 'read', 'solve', 'heuristic'
+
+# Task settings (only used if method is 'heuristic')
+# --------------------------------------------------------------------------------------
+create_initial_solution = True
+heuristic_settings = {
+    'model_parameters': {
+        'boundary': 10,
+        'delta': 0.25,
+    },
+    'step_1': {
+        'epsilon': 0.001,
+        'surpress_gurobi': False
+    },
+    'step_2': {
+        'start_capacity': 2.5,
+        'capacity_step': 0.25
+    },
+    'step_3': {},
+    'step_4': {
+        'epsilon': 0.01,
+        'surpress_gurobi': False
+    }
+}
+
+# Function calls
+# --------------------------------------------------------------------------------------
+if instance_name not in ['small_data_set', 'large_data_set']:
+    # This function can be called to generate an .xlsx instance file
+    gen_instance(seed=int(instance_name),
+                 num_s=6,
+                 num_d=8,
+                 num_c=16,
+                 num_p=1,
+                 T=20)
+    instance_name = str(instance_name)
 
 # Read and create problem
-instance_name = 'small_data_set'
 problem = Problem(instance_name)
 
 # Solve it using the heuristic and display the solution
-# problem.read_solution(instance_name)
-solve(problem)
-print(get_utilization_costs(problem))
-# problem.log_backlog()
-problem.log_objective()
+if method == 'read':
+    problem.read_solution(instance_name)
+elif method == 'solve':
+    problem = solve(problem)
+elif method == 'heuristic':
+    problem = heuristic(problem, heuristic_settings, create_initial_solution)
+
+# Log functions for solution
+# --------------------------------------------------------------------------------------
+problem.log_objective(summary_only=True)
+problem.verify_constraints()
 problem.display()
-# problem.log_solution()
-# problem.log_k()
+input('Press enter to exit..')
