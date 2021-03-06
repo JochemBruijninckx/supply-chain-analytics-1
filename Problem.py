@@ -309,10 +309,16 @@ class Problem:
             print('-' * 70)
             print('Total demand:', self.cum_demand[c, p, t])
             print('Inventory:', self.solution['I'][c, p, str(t)])
+            print('Difference:', self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t])
+            print('Difference squared:', (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2)
+            print('b:', self.backlog_pen[c, p])
             extra_penalty = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             print('Incurred penalty:', extra_penalty)
             print('-' * 70)
             total_backlog_penalty += extra_penalty
+        # for c in self.C:
+        #     for p in self.P:
+        #         print(c, p, '|', sum([self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2 for t in self.T]))
         print(total_backlog_penalty)
 
     def log_solution(self, display=None, draw_settings=None):
@@ -435,6 +441,26 @@ class Problem:
             print('-' * 70)
         # Backlog costs
         tot_backlog_costs = 0
+        for c in self.C:
+            customer_backlog = 0
+            if not summary_only:
+                print(c, '|')
+                print('-' * 70)
+            for p in self.P:
+                if not summary_only:
+                    print(c, p, '|', [round(self.cum_demand[c, p, t], 2) for t in self.T], '- Cumulative demand over time')
+                    print(c, p, '|', [round(self.solution['I'][c, p, str(t)], 2) for t in self.T], '- Total delivered over time')
+                product_backlog = 0
+                for t in self.T:
+                    product_backlog += self.backlog_pen[c, p] * ((self.solution['I'][c, p, str(t)]
+                                                                 - self.cum_demand[c, p, t]) ** 2)
+                customer_backlog += product_backlog
+                if not summary_only:
+                    print(c, p, '| Product backlog costs:', product_backlog)
+                    print('-' * 70)
+            if not summary_only:
+                print(c, '| Customer backlog costs:', round(customer_backlog, 2))
+                print('-' * 70)
         for c, p, t in self.customer_product_time:
             extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             tot_backlog_costs += extra_backlog
@@ -495,7 +521,7 @@ class Problem:
         for link in self.links:
             for t in self.T:
                 t = str(t)
-                assert self.solution['k'][link[0], link[1], t] <= self.solution['v'][link]
+                assert round(self.solution['k'][link[0], link[1], t]) <= round(self.solution['v'][link])
         # 3 - Required trucks constraint
         for i, j in self.links:
             for t in self.T:
@@ -517,7 +543,7 @@ class Problem:
             outflow = sum([self.solution['x'][d, j, p, str(t)] for j in self.D_and_C if (d, j) in self.links])
             inflow = sum([self.solution['x'][j, d, p, str(t - self.duration[j, d])] for j in self.S_and_D
                           if (j, d) in self.links and t - self.duration[j, d] >= self.start])
-            assert outflow <= self.solution['I'][d, p, str(t - 1)] + inflow
+            assert round(outflow, 2) <= round(self.solution['I'][d, p, str(t - 1)] + inflow, 2)
         # 7 - Depot capacity constraint
         for d in self.D:
             for t in self.T:
@@ -539,7 +565,8 @@ class Problem:
         # 10 - Total inventories must match cumulative demand
         for c in self.C:
             for p in self.P:
-                assert self.solution['I'][c, p, str(self.end)] == self.cum_demand[c, p, self.end]
+                assert round(self.solution['I'][c, p, str(self.end)], 5) == round(self.cum_demand[c, p, self.end], 5)
+        print('Constraints succesfully verified.')
         return
 
     # Call display on this problem's solution showing only opened links and their capacities
