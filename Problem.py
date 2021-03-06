@@ -512,7 +512,34 @@ class Problem:
             t = str(t)
             production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C])
             assert round(production, 2) <= self.max_prod[s, p] * self.solution['r'][s, p, t]
-
+        # 6 - Depot outflow constraint
+        for d, p, t in self.depot_product_time:
+            outflow = sum([self.solution['x'][d, j, p, str(t)] for j in self.D_and_C if (d, j) in self.links])
+            inflow = sum([self.solution['x'][j, d, p, str(t - self.duration[j, d])] for j in self.S_and_D
+                          if (j, d) in self.links and t - self.duration[j, d] >= self.start])
+            assert outflow <= self.solution['I'][d, p, str(t - 1)] + inflow
+        # 7 - Depot capacity constraint
+        for d in self.D:
+            for t in self.T:
+                t = str(t)
+                volume = sum([self.product_volume[p] * self.solution['I'][d, p, t] for p in self.P])
+                assert volume <= self.capacity[d]
+        # 8 - Flow constraints
+        for i, p, t in self.dc_product_time:
+            if t > 0:
+                outflow = sum([self.solution['x'][i, j, p, str(t)] for j in self.D_and_C if (i, j) in self.links])
+                inflow = sum([self.solution['x'][j, i, p, str(t - self.duration[j, i])] for j in self.S_and_D
+                              if (j, i) in self.links and t - self.duration[j, i] >= self.start])
+                assert round(self.solution['I'][i, p, str(t)], 4) == round(self.solution['I'][i, p, str(t - 1)] + inflow
+                                                                           - outflow, 4)
+        # 9 - Inventories start at 0
+        for i in self.D_and_C:
+            for p in self.P:
+                assert self.solution['I'][i, p, '0'] == 0
+        # 10 - Total inventories must match cumulative demand
+        for c in self.C:
+            for p in self.P:
+                assert self.solution['I'][c, p, str(self.end)] == self.cum_demand[c, p, self.end]
         return
 
     # Call display on this problem's solution showing only opened links and their capacities
