@@ -239,7 +239,12 @@ class Problem:
 
     # Function that updates this problem object's solution based on a solution file
     def read_solution(self, instance_name):
-        self.solution = {}
+        self.solution = {'x': {(i, j, p, str(t)): 0 for (i, j, p, t) in self.link_product_time},
+                         'l': {(i, j): 0 for (i, j) in self.links},
+                         'v': {(i, j): 0 for (i, j) in self.links},
+                         'k': {(i, j, str(t)): 0 for (i, j, t) in self.link_time},
+                         'r': {(s, p, str(t)): 0 for (s, p, t) in self.supplier_product_time},
+                         'I': {(i, p, str(t)): 0 for (i, p, t) in self.dc_product_time}}
         # Read solution
         with open('Solutions/' + instance_name + '.sol', newline='\n') as file:
             reader = csv.reader((line.replace('  ', ' ') for line in file), delimiter=' ')
@@ -485,32 +490,27 @@ class Problem:
     def verify_constraints(self):
         # 1 - Link opening constraint
         for link in self.links:
-            if link in self.solution['v'].keys():
-                assert self.solution['l'][link] * 10000 >= self.solution['v'][link], 'Constraint 1 violation'
+            assert self.solution['l'][link] * 10000 >= self.solution['v'][link], 'Constraint 1 violation'
         # 2 - Link capacity constraint
         for link in self.links:
-            if link in self.solution['v'].keys():
-                for t in self.T:
-                    t = str(t)
-                    assert self.solution['k'][link[0], link[1], t] <= self.solution['v'][link]
+            for t in self.T:
+                t = str(t)
+                assert self.solution['k'][link[0], link[1], t] <= self.solution['v'][link]
         # 3 - Required trucks constraint
         for i, j in self.links:
-            if (i, j) in self.solution['v'].keys():
-                for t in self.T:
-                    t = str(t)
-                    volume = sum([self.product_volume[p] * self.solution['x'][i, j, p, t] for p in self.P])
-                    assert self.solution['k'][i, j, t] >= round(volume / self.truck_size)
+            for t in self.T:
+                t = str(t)
+                volume = sum([self.product_volume[p] * self.solution['x'][i, j, p, t] for p in self.P])
+                assert self.solution['k'][i, j, t] >= round(volume / self.truck_size)
         # 4 - Min production constraint
         for s, p, t in self.supplier_product_time:
             t = str(t)
-            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
-                              if (s, j) in self.solution['v'].keys()])
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C])
             assert round(production, 2) >= self.min_prod[s, p] * self.solution['r'][s, p, t]
         # 5 - Max production constraint
         for s, p, t in self.supplier_product_time:
             t = str(t)
-            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
-                              if (s, j) in self.solution['v'].keys()])
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C])
             assert round(production, 2) <= self.max_prod[s, p] * self.solution['r'][s, p, t]
 
         return

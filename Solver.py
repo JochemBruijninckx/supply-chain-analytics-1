@@ -139,8 +139,6 @@ def heuristic(problem, settings, create_initial_solution=True):
                 connected_links = connected_links.union(get_connected_links(problem, dropped_link[0])[1])
                 connected_links = connected_links.union(get_connected_links(problem, dropped_link[1])[1])
                 rejected_links = rejected_links - connected_links
-                # print('Reevaluate:', connected_links)
-                # print(rejected_links)
                 found_improvement = True
                 break
             else:
@@ -148,7 +146,6 @@ def heuristic(problem, settings, create_initial_solution=True):
                       '| Rejected dropping link', dropped_link, rejection_reason)
                 # Store the rejected link
                 rejected_links.add(dropped_link)
-                # print(rejected_links)
     end_time = time.time()
     time_used.append(end_time - start_time)
     problem.display()
@@ -170,7 +167,7 @@ def heuristic(problem, settings, create_initial_solution=True):
         'gap': settings['step_4']['epsilon']
     })
     # Load the feasible solution into our problem object
-    problem.read_solution(problem.instance_name)
+    original_problem.read_solution(problem.instance_name)
     end_time = time.time()
     time_used.append(end_time - start_time)
     # Log used time
@@ -181,7 +178,7 @@ def heuristic(problem, settings, create_initial_solution=True):
     print('-' * 70)
     print('Total time      |', str(round(sum(time_used), 2)) + 's')
     print('-' * 70)
-    return problem
+    return original_problem
 
 
 def drop_link(problem, link):
