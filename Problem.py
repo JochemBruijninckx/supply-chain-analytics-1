@@ -448,12 +448,14 @@ class Problem:
                 print('-' * 70)
             for p in self.P:
                 if not summary_only:
-                    print(c, p, '|', [round(self.cum_demand[c, p, t], 2) for t in self.T], '- Cumulative demand over time')
-                    print(c, p, '|', [round(self.solution['I'][c, p, str(t)], 2) for t in self.T], '- Total delivered over time')
+                    print(c, p, '|', [round(self.cum_demand[c, p, t], 2) for t in self.T],
+                          '- Cumulative demand over time')
+                    print(c, p, '|', [round(self.solution['I'][c, p, str(t)], 2) for t in self.T],
+                          '- Total delivered over time')
                 product_backlog = 0
                 for t in self.T:
                     product_backlog += self.backlog_pen[c, p] * ((self.solution['I'][c, p, str(t)]
-                                                                 - self.cum_demand[c, p, t]) ** 2)
+                                                                  - self.cum_demand[c, p, t]) ** 2)
                 customer_backlog += product_backlog
                 if not summary_only:
                     print(c, p, '| Product backlog costs:', product_backlog)
@@ -556,8 +558,8 @@ class Problem:
                 outflow = sum([self.solution['x'][i, j, p, str(t)] for j in self.D_and_C if (i, j) in self.links])
                 inflow = sum([self.solution['x'][j, i, p, str(t - self.duration[j, i])] for j in self.S_and_D
                               if (j, i) in self.links and t - self.duration[j, i] >= self.start])
-                assert round(self.solution['I'][i, p, str(t)], 4) == round(self.solution['I'][i, p, str(t - 1)] + inflow
-                                                                           - outflow, 4)
+                assert round(self.solution['I'][i, p, str(t)], 4) - round(self.solution['I'][i, p, str(t - 1)] + inflow
+                                                                          - outflow, 4) <= 0.0001
         # 9 - Inventories start at 0
         for i in self.D_and_C:
             for p in self.P:

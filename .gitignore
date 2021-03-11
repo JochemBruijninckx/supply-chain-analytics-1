@@ -3,4 +3,6 @@ Instances/*
 !Instances/large_data_set.xlsx
 
 Solutions/*
+!Solutions/large_data_set.sol
+!Solutions/small_data_set.sol
 !Solutions/Final
