@@ -5,7 +5,7 @@ from Solver import *
 # Task to run
 # --------------------------------------------------------------------------------------
 instance_name = 'large_data_set'   # Enter a number to generate a random instance
-method = 'read'                     # Options are 'read', 'solve', 'heuristic'
+method = 'heuristic'                     # Options are 'read', 'solve', 'heuristic'
 
 # Task settings (only used if method is 'heuristic')
 # --------------------------------------------------------------------------------------
@@ -23,7 +23,9 @@ heuristic_settings = {
         'start_capacity': 2.5,
         'capacity_step': 0.25
     },
-    'step_3': {},
+    'step_3': {
+        'check_full_list': False
+    },
     'step_4': {
         'epsilon': 0.01,
         'surpress_gurobi': False
@@ -55,7 +57,7 @@ elif method == 'heuristic':
 
 # Log functions for solution
 # --------------------------------------------------------------------------------------
-problem.log_objective(summary_only=True)
 problem.verify_constraints()
+problem.log_objective(summary_only=True)
 problem.display()
 input('Press enter to exit..')

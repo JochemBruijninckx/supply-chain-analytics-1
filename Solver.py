@@ -99,7 +99,11 @@ def heuristic(problem, settings, create_initial_solution=True):
         iteration += 1
         found_improvement = False
         print('Iteration', iteration, '|')
-        sorted_links = get_utilization_costs(problem)
+        # Initialize best link/problem for this iteration
+        best_dropped_link = None
+        start_objective = current_objective
+        alternative_problem = copy.deepcopy(problem)
+        sorted_links = get_utilization_costs(alternative_problem)
         for (link_index, dropped_link) in enumerate(sorted_links):
             rejection_reason = ''
             if dropped_link in rejected_links:
@@ -107,45 +111,64 @@ def heuristic(problem, settings, create_initial_solution=True):
                 alternative_objective = math.inf
             else:
                 # Construct a v_bounds object that will limit our allowed choices of capacity
-                v_bounds = get_v_bounds(problem, method='exact')
+                v_bounds = get_v_bounds(alternative_problem, method='exact')
                 v_bounds[dropped_link] = {'lb': 0, 'ub': 0}
-                alternative_links = get_alternative_links(problem, dropped_link[1], dropped_link)
+                alternative_links = get_alternative_links(alternative_problem, dropped_link[1], dropped_link)
                 # If this link is our only link to a customer, reject dropping it by default
-                if alternative_links == [] and dropped_link[1] in problem.C:
+                if alternative_links == [] and dropped_link[1] in alternative_problem.C:
                     rejection_reason = '(Only route to customer)'
                     alternative_objective = math.inf
                 else:
                     for alternative_link in alternative_links:
                         v_bounds[alternative_link].pop('ub')
                     # Construct alternative model using the previously constructed v_bounds and solve it
-                    alternative_model = Model(problem, {
+                    alternative_model = Model(alternative_problem, {
                         'non_integer_trucks': True,
                         'linear_backlog_approx': True
                     }, {'v': v_bounds}, surpress_logs=True, parameters=settings['model_parameters'])
                     alternative_objective = alternative_model.solve(problem.instance_name + '_alternative', {
-                        'bound': current_objective
+                        'bound': start_objective
                     })
             # Check if the alternative capacity procurement leads to an objective improvement
-            if alternative_objective < current_objective:
-                print('(' + str(link_index + 1) + '/' + str(len(sorted_links)) + ')',
-                      '| Found improvement by dropping link', dropped_link)
-                print('New objective |', round(alternative_objective, 2))
-                print('-' * 70)
-                problem.read_solution(problem.instance_name + '_alternative')
-                drop_link(problem, dropped_link)
-                current_objective = alternative_objective
-                # Remove links from rejected set that we now want to re-evaluate
-                connected_links = set()
-                connected_links = connected_links.union(get_connected_links(problem, dropped_link[0])[1])
-                connected_links = connected_links.union(get_connected_links(problem, dropped_link[1])[1])
-                rejected_links = rejected_links - connected_links
+            if alternative_objective < start_objective:
+                # Dropping this link is an improvement compared to last iteration
                 found_improvement = True
-                break
+                if alternative_objective < current_objective:
+                    # Dropping this link is the best improvement so far
+                    current_objective = alternative_objective
+                    best_dropped_link = dropped_link
+                    problem.read_solution(problem.instance_name + '_alternative')
+                    # If we are going to check the full list, simply note that this is the best so far
+                    if settings['step_3']['check_full_list']:
+                        print('(' + str(link_index + 1) + '/' + str(len(sorted_links)) + ')',
+                              '| Current best improvement by dropping link', dropped_link,
+                              round(alternative_objective, 2))
+                    # If we run a greedy approach, immediately break to end this iteration
+                    else:
+                        print('(' + str(link_index + 1) + '/' + str(len(sorted_links)) + ')',
+                              '| Found improvement by dropping link', dropped_link)
+                        break
+                else:
+                    # Dropping this link is an improvement, but not the best one in this iteration
+                    print('(' + str(link_index + 1) + '/' + str(len(sorted_links)) + ')',
+                          '| Found improvement by dropping link', dropped_link, round(alternative_objective, 2))
             else:
+                # Dropping this link is not an improvement compared to last iteration, it is therefore rejected.
                 print('(' + str(link_index + 1) + '/' + str(len(sorted_links)) + ')',
                       '| Rejected dropping link', dropped_link, rejection_reason)
                 # Store the rejected link
                 rejected_links.add(dropped_link)
+        if best_dropped_link is not None:
+            print('Dropped link |', best_dropped_link)
+            print('New objective |', round(current_objective, 2))
+            print('-' * 70)
+            # Drop selected link from problem
+            drop_link(problem, best_dropped_link)
+            # Remove links from rejected set that we now want to re-evaluate
+            connected_links = set()
+            connected_links = connected_links.union(get_connected_links(problem, best_dropped_link[0])[1])
+            connected_links = connected_links.union(get_connected_links(problem, best_dropped_link[1])[1])
+            rejected_links = rejected_links - connected_links
     end_time = time.time()
     time_used.append(end_time - start_time)
     problem.display()
@@ -248,7 +271,7 @@ def get_alternative_links(problem, destination, dropped_link, alternative_links=
     new_links = []
     for i in problem.S_and_D:
         if (i, destination) not in alternative_links:
-            if (i, destination) in problem.links and problem.solution['v'][(i, destination)] > 0\
+            if (i, destination) in problem.links and problem.solution['v'][(i, destination)] > 0 \
                     and (i, destination) != dropped_link:
                 new_links += [(i, destination)]
     alternative_links += new_links
