@@ -239,7 +239,12 @@ class Problem:
 
     # Function that updates this problem object's solution based on a solution file
     def read_solution(self, instance_name):
-        self.solution = {}
+        self.solution = {'x': {(i, j, p, str(t)): 0 for (i, j, p, t) in self.link_product_time},
+                         'l': {(i, j): 0 for (i, j) in self.links},
+                         'v': {(i, j): 0 for (i, j) in self.links},
+                         'k': {(i, j, str(t)): 0 for (i, j, t) in self.link_time},
+                         'r': {(s, p, str(t)): 0 for (s, p, t) in self.supplier_product_time},
+                         'I': {(i, p, str(t)): 0 for (i, p, t) in self.dc_product_time}}
         # Read solution
         with open('Solutions/' + instance_name + '.sol', newline='\n') as file:
             reader = csv.reader((line.replace('  ', ' ') for line in file), delimiter=' ')
@@ -304,10 +309,16 @@ class Problem:
             print('-' * 70)
             print('Total demand:', self.cum_demand[c, p, t])
             print('Inventory:', self.solution['I'][c, p, str(t)])
+            print('Difference:', self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t])
+            print('Difference squared:', (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2)
+            print('b:', self.backlog_pen[c, p])
             extra_penalty = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             print('Incurred penalty:', extra_penalty)
             print('-' * 70)
             total_backlog_penalty += extra_penalty
+        # for c in self.C:
+        #     for p in self.P:
+        #         print(c, p, '|', sum([self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2 for t in self.T]))
         print(total_backlog_penalty)
 
     def log_solution(self, display=None, draw_settings=None):
@@ -430,6 +441,26 @@ class Problem:
             print('-' * 70)
         # Backlog costs
         tot_backlog_costs = 0
+        for c in self.C:
+            customer_backlog = 0
+            if not summary_only:
+                print(c, '|')
+                print('-' * 70)
+            for p in self.P:
+                if not summary_only:
+                    print(c, p, '|', [round(self.cum_demand[c, p, t], 2) for t in self.T], '- Cumulative demand over time')
+                    print(c, p, '|', [round(self.solution['I'][c, p, str(t)], 2) for t in self.T], '- Total delivered over time')
+                product_backlog = 0
+                for t in self.T:
+                    product_backlog += self.backlog_pen[c, p] * ((self.solution['I'][c, p, str(t)]
+                                                                 - self.cum_demand[c, p, t]) ** 2)
+                customer_backlog += product_backlog
+                if not summary_only:
+                    print(c, p, '| Product backlog costs:', product_backlog)
+                    print('-' * 70)
+            if not summary_only:
+                print(c, '| Customer backlog costs:', round(customer_backlog, 2))
+                print('-' * 70)
         for c, p, t in self.customer_product_time:
             extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
             tot_backlog_costs += extra_backlog
@@ -485,34 +516,57 @@ class Problem:
     def verify_constraints(self):
         # 1 - Link opening constraint
         for link in self.links:
-            if link in self.solution['v'].keys():
-                assert self.solution['l'][link] * 10000 >= self.solution['v'][link], 'Constraint 1 violation'
+            assert self.solution['l'][link] * 10000 >= self.solution['v'][link], 'Constraint 1 violation'
         # 2 - Link capacity constraint
         for link in self.links:
-            if link in self.solution['v'].keys():
-                for t in self.T:
-                    t = str(t)
-                    assert self.solution['k'][link[0], link[1], t] <= self.solution['v'][link]
+            for t in self.T:
+                t = str(t)
+                assert round(self.solution['k'][link[0], link[1], t]) <= round(self.solution['v'][link])
         # 3 - Required trucks constraint
         for i, j in self.links:
-            if (i, j) in self.solution['v'].keys():
-                for t in self.T:
-                    t = str(t)
-                    volume = sum([self.product_volume[p] * self.solution['x'][i, j, p, t] for p in self.P])
-                    assert self.solution['k'][i, j, t] >= round(volume / self.truck_size)
+            for t in self.T:
+                t = str(t)
+                volume = sum([self.product_volume[p] * self.solution['x'][i, j, p, t] for p in self.P])
+                assert self.solution['k'][i, j, t] >= round(volume / self.truck_size)
         # 4 - Min production constraint
         for s, p, t in self.supplier_product_time:
             t = str(t)
-            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
-                              if (s, j) in self.solution['v'].keys()])
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C])
             assert round(production, 2) >= self.min_prod[s, p] * self.solution['r'][s, p, t]
         # 5 - Max production constraint
         for s, p, t in self.supplier_product_time:
             t = str(t)
-            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C
-                              if (s, j) in self.solution['v'].keys()])
+            production = sum([self.solution['x'][s, j, p, t] for j in self.D_and_C])
             assert round(production, 2) <= self.max_prod[s, p] * self.solution['r'][s, p, t]
-
+        # 6 - Depot outflow constraint
+        for d, p, t in self.depot_product_time:
+            outflow = sum([self.solution['x'][d, j, p, str(t)] for j in self.D_and_C if (d, j) in self.links])
+            inflow = sum([self.solution['x'][j, d, p, str(t - self.duration[j, d])] for j in self.S_and_D
+                          if (j, d) in self.links and t - self.duration[j, d] >= self.start])
+            assert round(outflow, 2) <= round(self.solution['I'][d, p, str(t - 1)] + inflow, 2)
+        # 7 - Depot capacity constraint
+        for d in self.D:
+            for t in self.T:
+                t = str(t)
+                volume = sum([self.product_volume[p] * self.solution['I'][d, p, t] for p in self.P])
+                assert volume <= self.capacity[d]
+        # 8 - Flow constraints
+        for i, p, t in self.dc_product_time:
+            if t > 0:
+                outflow = sum([self.solution['x'][i, j, p, str(t)] for j in self.D_and_C if (i, j) in self.links])
+                inflow = sum([self.solution['x'][j, i, p, str(t - self.duration[j, i])] for j in self.S_and_D
+                              if (j, i) in self.links and t - self.duration[j, i] >= self.start])
+                assert round(self.solution['I'][i, p, str(t)], 4) == round(self.solution['I'][i, p, str(t - 1)] + inflow
+                                                                           - outflow, 4)
+        # 9 - Inventories start at 0
+        for i in self.D_and_C:
+            for p in self.P:
+                assert self.solution['I'][i, p, '0'] == 0
+        # 10 - Total inventories must match cumulative demand
+        for c in self.C:
+            for p in self.P:
+                assert round(self.solution['I'][c, p, str(self.end)], 5) == round(self.cum_demand[c, p, self.end], 5)
+        print('Constraints succesfully verified.')
         return
 
     # Call display on this problem's solution showing only opened links and their capacities
