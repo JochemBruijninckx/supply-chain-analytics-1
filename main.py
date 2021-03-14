@@ -13,7 +13,7 @@ create_initial_solution = True         # If False, the initial solution is loade
 heuristic_settings = {
     'model_parameters': {
         'boundary': 2.5,                # B
-        'delta': 0.25,                     # Delta_B
+        'delta': 0.25,                  # Delta_B
     },
     'step_1': {
         'epsilon': 0.001,               # Optimality gap stopping criterion for Step 1
@@ -61,5 +61,4 @@ elif method == 'heuristic':
 # --------------------------------------------------------------------------------------
 problem.log_objective(summary_only=True)
 problem.display(integer=True)
-
 input('Press enter to exit..')
