@@ -19,41 +19,39 @@ class Display:
             x = [a['LocationX'], b['LocationX']]
             y = [a['LocationY'], b['LocationY']]
             plt.plot(x, y, color=colors[0])
-            self.ax.text(0.5 * sum(x), 0.5 * sum(y), text, color="black", fontsize=9, fontweight='bold')
+            self.ax.text(0.5 * sum(x), 0.5 * sum(y), text, color="black", fontsize=10, fontweight='bold')
 
         if settings:
-            if self.problem.solution != {}:
-                for link in self.problem.links:
-                    if settings['show_capacities']:
-                        if link in self.problem.solution['v']:
-                            v = self.problem.solution['v'][link]
-                            if v > 0:
-                                text = str(round(v, 2)) if not settings['integer'] else str(int(v))
-                                annotate_link(link, text)
-                    if settings['show_trucks']:
-                        link_time = link + (str(t),)
-                        k = self.problem.solution['k'][link_time]
-                        if k > 0:
-                            annotate_link(link, 'k=' + str(round(k, 2)))
-                    if settings['show_transport']:
-                        link_product_time = link + ('P1', str(t),)
-                        transport = self.problem.solution['x'][link_product_time]
-                        if transport > 0:
-                            annotate_link(link, 'x=' + str(round(transport, 2)))
+            for link in self.problem.links:
+                if settings['show_capacities']:
+                    if link in self.problem.solution['v']:
+                        v = self.problem.solution['v'][link]
+                        if v > 0:
+                            annotate_link(link, str(round(v, 2)))
+                if settings['show_trucks']:
+                    link_time = link + (str(t),)
+                    k = self.problem.solution['k'][link_time]
+                    if k > 0:
+                        annotate_link(link, 'k=' + str(round(k, 2)))
+                if settings['show_transport']:
+                    link_product_time = link + ('P1', str(t),)
+                    transport = self.problem.solution['x'][link_product_time]
+                    if transport > 0:
+                        annotate_link(link, 'x=' + str(round(transport, 2)))
 
-                if settings['show_inventory']:
-                    for d in self.problem.D:
-                        location = self.problem.locations.loc[d]
-                        x, y = location.LocationX, location.LocationY
-                        I = self.problem.inventory_depot(d, 'P1', t)
-                        self.ax.text(x + 0.25, y - 0.25, round(I, 2), color="black", fontsize=12)
+            if settings['show_inventory']:
+                for d in self.problem.D:
+                    location = self.problem.locations.loc[d]
+                    x, y = location.LocationX, location.LocationY
+                    I = self.problem.inventory_depot(d, 'P1', t)
+                    self.ax.text(x + 0.25, y - 0.25, round(I, 2), color="black", fontsize=12)
 
         # Draw location markers
         for i, location in self.problem.locations.iterrows():
             x, y = location.LocationX, location.LocationY
             color_indices = {'S': 1, 'D': 3, 'C': 2}
             self.ax.plot(x, y, 'o', color=colors[color_indices[location['Location'][0]]])
-            self.ax.text(x, y, '$' + location['Location'] + '$', color="black", fontsize=11)
+            self.ax.text(x, y, '$' + location['Location'] + '$', color="black", fontsize=12)
 
         plt.grid()
         plt.show()

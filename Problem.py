@@ -10,15 +10,15 @@ from Display import Display
 def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     np.random.seed(seed)
     n = num_s + num_d + num_c
-    s_coordinates = (1 / 10) * np.random.randint(0, 10 * n, (num_s, 2))
-    d_coordinates = (1 / 10) * np.random.randint(2.5 * n, 7.5 * n, (num_d, 2))
-    c_coordinates = (1 / 10) * np.random.randint(0, 10 * n, (num_c, 2))
+    coordinates = (1 / 10) * np.random.randint(0, 10 * n, (n, 2))
     # Sheet 1 - Suppliers
     supplier_data = pd.DataFrame(index=['S' + str(i + 1) for i in range(num_s)],
                                  columns=['LocationX', 'LocationY'])
     supplier_data.index.name = 'SupplierID'
+    loc_index = 0
     for i in range(num_s):
-        supplier_data.loc['S' + str(i + 1), :] = [s_coordinates[i][0], s_coordinates[i][1]]
+        supplier_data.loc['S' + str(i + 1), :] = [coordinates[loc_index][0], coordinates[loc_index][1]]
+        loc_index += 1
     print(supplier_data)
     # Sheet 2 - Depots
     depot_data = pd.DataFrame(index=['D' + str(i + 1) for i in range(num_d)],
@@ -27,15 +27,17 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     for i in range(num_d):
         capacity = round(7 + 20 * np.random.random(), 2)
         holding_cost = round(0.3 + 0.3 * np.random.random(), 2)
-        depot_data.loc['D' + str(i + 1), :] = [d_coordinates[i][0], d_coordinates[i][1],
+        depot_data.loc['D' + str(i + 1), :] = [coordinates[loc_index][0], coordinates[loc_index][1],
                                                capacity, holding_cost]
+        loc_index += 1
     print(depot_data)
     # Sheet 3 - Customers
     customer_data = pd.DataFrame(index=['C' + str(i + 1) for i in range(num_c)],
                                  columns=['LocationX', 'LocationY'])
     customer_data.index.name = 'CustomerID'
     for i in range(num_c):
-        customer_data.loc['C' + str(i + 1), :] = [c_coordinates[i][0], c_coordinates[i][1]]
+        customer_data.loc['C' + str(i + 1), :] = [coordinates[loc_index][0], coordinates[loc_index][1]]
+        loc_index += 1
     print(customer_data)
     # Sheet 4 - Products
     product_data = pd.DataFrame(index=['P' + str(i + 1) for i in range(num_p)],
@@ -99,12 +101,8 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
     production_data.index.names = ['Supplier', 'Product']
     for i in range(num_s):
         for j in range(num_p):
-            if np.random.random() <= 0.8:
-                min_production = round(7 + 10 * np.random.random(), 2)
-                max_production = round(min_production + 5 + 5 * np.random.random(), 2)
-            else:
-                min_production = 0
-                max_production = 0
+            min_production = round(7 + 10 * np.random.random(), 2)
+            max_production = round(min_production + 5 + 5 * np.random.random(), 2)
             production_data.loc['S' + str(i + 1), 'P' + str(j + 1)] = [min_production, max_production]
     print(production_data)
     # Sheet 9 - Parameters
@@ -183,10 +181,9 @@ class Problem:
                 self.link_time.append((a[0], a[1], t))
 
         self.supplier_product_time = []
-        for s in self.S:
-            for p in self.P:
-                for t in self.T:
-                    self.supplier_product_time.append((s, p, t))
+        for t in self.T:
+            for i in range(len(production_data)):
+                self.supplier_product_time.append((production_data['Supplier'][i], production_data['Product'][i], t))
 
         self.depot_time = []
         for d in self.D:
@@ -232,11 +229,11 @@ class Problem:
                                           if (c, p, f) in self.demand_set) for (c, p, t) in self.customer_product_time}
         self.backlog_pen = {self.customer_product[i]: backlog_data['Amount'][i] for i in
                             range(len(backlog_data))}
-        self.min_prod = {(s, p): 0 for s in self.S for p in self.P}
-        self.max_prod = {(s, p): 0 for s in self.S for p in self.P}
-        for i in range(len(production_data)):
-            self.min_prod[self.supplier_product[i]] = production_data['Minimum'][i]
-            self.max_prod[self.supplier_product[i]] = production_data['Maximum'][i]
+        self.min_prod = {self.supplier_product[i]: production_data['Minimum'][i] for i in
+                         range(len(production_data))}
+        self.max_prod = {self.supplier_product[i]: production_data['Maximum'][i] for i in
+                         range(len(production_data))}
+
         self.solution = {}
         self.objective = np.inf
 
@@ -319,6 +316,9 @@ class Problem:
             print('Incurred penalty:', extra_penalty)
             print('-' * 70)
             total_backlog_penalty += extra_penalty
+        # for c in self.C:
+        #     for p in self.P:
+        #         print(c, p, '|', sum([self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2 for t in self.T]))
         print(total_backlog_penalty)
 
     def log_solution(self, display=None, draw_settings=None):
@@ -478,19 +478,6 @@ class Problem:
         print('-' * 70)
         print('Total costs          |', round(tot_objective, 2))
         print('-' * 70)
-        return {
-            'backlog': tot_backlog_costs,
-            'total': tot_objective
-        }
-
-    def log_production(self):
-        for s in self.S:
-            print(s, '|')
-            print('-' * 70)
-            for p in self.P:
-                production = [round(sum(self.solution['x'][s, j, p, str(t)] for j in self.D_and_C), 2) for t in self.T]
-                print(p, '|', production)
-            print('-' * 70)
 
     def log_depot(self, d):
         for t in self.T:
@@ -558,7 +545,7 @@ class Problem:
             outflow = sum([self.solution['x'][d, j, p, str(t)] for j in self.D_and_C if (d, j) in self.links])
             inflow = sum([self.solution['x'][j, d, p, str(t - self.duration[j, d])] for j in self.S_and_D
                           if (j, d) in self.links and t - self.duration[j, d] >= self.start])
-            assert round(outflow, 2) <= round(self.solution['I'][d, p, str(t - 1)] + inflow, 2) + 0.01
+            assert round(outflow, 2) <= round(self.solution['I'][d, p, str(t - 1)] + inflow, 2)
         # 7 - Depot capacity constraint
         for d in self.D:
             for t in self.T:
@@ -585,7 +572,6 @@ class Problem:
         return
 
     # Call display on this problem's solution showing only opened links and their capacities
-    def display(self, integer=False):
+    def display(self):
         disp = Display(self)
-        disp.draw(0, {'show_capacities': True, 'show_trucks': False, 'show_transport': False, 'show_inventory': False,
-                      'integer': integer})
+        disp.draw(0, {'show_capacities': True, 'show_trucks': False, 'show_transport': False, 'show_inventory': False})

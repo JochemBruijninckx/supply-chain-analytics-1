@@ -5,7 +5,6 @@ import time
 from Model import Model
 
 
-# Exact solving of the problem
 def solve(problem, settings=None, bounds=None):
     # Create regular model
     model = Model(problem, settings, bounds=bounds)
@@ -16,7 +15,6 @@ def solve(problem, settings=None, bounds=None):
     return problem
 
 
-# Heuristic method applied to problem
 def heuristic(problem, settings, create_initial_solution=True):
     time_used = []
     # Step 1 - Create or load initial solution.
@@ -30,13 +28,12 @@ def heuristic(problem, settings, create_initial_solution=True):
         relaxed_model = Model(problem, {
             'all_links_open': True,
             'non_integer_trucks': True,
-            'linear_backlog_approx': True,
-            'perfect_delivery': False
+            'linear_backlog_approx': False,
+            'perfect_delivery': True
         }, surpress_logs=settings['step_1']['surpress_gurobi'])
         relaxed_model.write(problem.instance_name + '_relaxed')
         relaxed_model.solve(problem.instance_name + '_relaxed', {
-            'gap': settings['step_1']['epsilon'],
-            'time': settings['step_1']['time']
+            'gap': settings['step_1']['epsilon']
         })
     else:
         print('Step 1 | Loading initial solution')
@@ -63,7 +60,7 @@ def heuristic(problem, settings, create_initial_solution=True):
         # Create alternative problem in which all low-capacity links are dropped
         alternative_problem = copy.deepcopy(original_problem)
         drop_links(alternative_problem, current_capacity)
-        # Fix the capacity of all remaining links equal to their current value
+        # Set lower bounds on the capacity of all remaining links equal to their current value
         v_bounds = get_v_bounds(alternative_problem, method='exact')
         # Construct and solve the alternative model
         alternative_model = Model(alternative_problem, {
@@ -116,15 +113,13 @@ def heuristic(problem, settings, create_initial_solution=True):
                 # Construct a v_bounds object that will limit our allowed choices of capacity
                 v_bounds = get_v_bounds(alternative_problem, method='exact')
                 v_bounds[dropped_link] = {'lb': 0, 'ub': 0}
-                alternative_destination_links = get_alternative_links(alternative_problem, dropped_link[1],
-                                                                      dropped_link)
+                alternative_links = get_alternative_links(alternative_problem, dropped_link[1], dropped_link)
                 # If this link is our only link to a customer, reject dropping it by default
-                if alternative_destination_links == [] and dropped_link[1] in alternative_problem.C:
+                if alternative_links == [] and dropped_link[1] in alternative_problem.C:
                     rejection_reason = '(Only route to customer)'
                     alternative_objective = math.inf
                 else:
-                    # Allow for extra capacity to be used on all alternative links to dropped_link's destination
-                    for alternative_link in alternative_destination_links:
+                    for alternative_link in alternative_links:
                         v_bounds[alternative_link].pop('ub')
                     # Construct alternative model using the previously constructed v_bounds and solve it
                     alternative_model = Model(alternative_problem, {
@@ -185,15 +180,14 @@ def heuristic(problem, settings, create_initial_solution=True):
     print('-' * 70)
     # Construct bounds to be used in reduced problem
     bounds = {
-        'v': get_v_bounds(problem, method='integer')
+        'v': get_v_bounds(problem, method='integer_round_up')
     }
     # Create reduced, non-relaxed model
     reduced_model = Model(problem, {
         'linear_backlog_approx': True
     }, bounds=bounds, surpress_logs=settings['step_4']['surpress_gurobi'], parameters=settings['model_parameters'])
     reduced_model.solve(problem.instance_name, {
-        'gap': settings['step_4']['epsilon'],
-        'time': settings['step_4']['time']
+        'gap': settings['step_4']['epsilon']
     })
     # Load the feasible solution into our problem object
     original_problem.read_solution(problem.instance_name)
@@ -210,7 +204,6 @@ def heuristic(problem, settings, create_initial_solution=True):
     return original_problem
 
 
-# Functions that remove one or multiple links from a problem
 def drop_link(problem, link):
     problem.links.remove(link)
     for t in problem.T:
@@ -221,7 +214,7 @@ def drop_link(problem, link):
 
 def drop_links(problem, maximum_capacity=0.0):
     unused_links = [link for link in problem.links if problem.solution['v'][link] <= maximum_capacity]
-    # Remove links form all relevant sets
+    # Remove unused links form all relevant sets
     for link in unused_links:
         problem.links.remove(link)
         for t in problem.T:
@@ -231,7 +224,6 @@ def drop_links(problem, maximum_capacity=0.0):
     return unused_links
 
 
-# A method that returns a v-bounds object; accepts different method settings
 def get_v_bounds(problem, method='integer'):
     v_bounds = {}
     if method == 'all_zero':
@@ -256,7 +248,6 @@ def get_v_bounds(problem, method='integer'):
     return v_bounds
 
 
-# Returns the sorted utilization costs of all links with a non-zero capacity
 def get_utilization_costs(problem):
     utilization_costs = {}
     for link in problem.links:
@@ -274,7 +265,6 @@ def get_utilization_costs(problem):
     return utilization_costs
 
 
-# Recursively returns all links that can be used to reach a destination if some link is dropped
 def get_alternative_links(problem, destination, dropped_link, alternative_links=None):
     if alternative_links is None:
         alternative_links = []
@@ -289,7 +279,7 @@ def get_alternative_links(problem, destination, dropped_link, alternative_links=
         alternative_links = get_alternative_links(problem, new_link[0], dropped_link, alternative_links)
     return alternative_links
 
-# Recursively returns all links that can be reached from a start node without passing by a supplier/customer node
+
 def get_connected_links(problem, start_node, connected_nodes=None, connected_links=None):
     if connected_links is None:
         connected_links = set()
