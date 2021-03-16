@@ -4,8 +4,9 @@ import winsound
 
 # Task to run
 # --------------------------------------------------------------------------------------
-instance_name = 'small_data_set'  # Enter a number to generate a random instance
-method = 'heuristic'                     # Options are 'read', 'solve', 'heuristic'
+instance_name = 'random_data_set'  # Enter a number to generate a random instance
+method = 'solve'                     # Options are 'read', 'solve', 'heuristic'
+seed = 100
 
 # Task settings (only used if method is 'heuristic')
 # --------------------------------------------------------------------------------------
@@ -36,7 +37,7 @@ heuristic_settings = {
 
 # Function calls
 # --------------------------------------------------------------------------------------
-if instance_name not in ['small_data_set', 'large_data_set']:
+if instance_name not in ['small_data_set', 'large_data_set', 'random_data_set']:
     # This function can be called to generate an .xlsx instance file
     gen_instance(seed=int(instance_name),
                  num_s=6,
@@ -47,7 +48,8 @@ if instance_name not in ['small_data_set', 'large_data_set']:
     instance_name = str(instance_name)
 
 # Read and create problem
-problem = Problem(instance_name)
+random = instance_name == 'random_data_set'
+problem = Problem(instance_name, random=random)
 
 # Solve it using the heuristic and display the solution
 if method == 'read':
