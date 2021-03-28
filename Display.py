@@ -55,5 +55,5 @@ class Display:
             self.ax.plot(x, y, 'o', color=colors[color_indices[location['Location'][0]]])
             self.ax.text(x, y, '$' + location['Location'] + '$', color="black", fontsize=11)
 
-        plt.grid()
+        # plt.grid()
         plt.show()

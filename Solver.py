@@ -1,6 +1,10 @@
 import math
 import copy
 import time
+from statistics import stdev
+
+import numpy as np
+import matplotlib.pyplot as plt
 
 from Model import Model
 
@@ -23,6 +27,9 @@ def heuristic(problem, settings, create_initial_solution=True):
     # --------------------------------------------------------------------------------------
     start_time = time.time()
     print()
+    # Generate new scenario's for Step 1
+    if problem.random:
+        problem.generate_scenarios(settings['heuristic_scenarios'])
     if create_initial_solution:
         print('Step 1 | Creating initial solution')
         print('-' * 70)
@@ -30,7 +37,7 @@ def heuristic(problem, settings, create_initial_solution=True):
         relaxed_model = Model(problem, {
             'all_links_open': True,
             'non_integer_trucks': True,
-            'linear_backlog_approx': True,
+            'linear_backlog_approx': False,
             'perfect_delivery': False
         }, surpress_logs=settings['step_1']['surpress_gurobi'])
         relaxed_model.write(problem.instance_name + '_relaxed')
@@ -61,14 +68,14 @@ def heuristic(problem, settings, create_initial_solution=True):
     while current_capacity >= 0:
         step = round((start_capacity - current_capacity) / capacity_step)
         # Create alternative problem in which all low-capacity links are dropped
-        alternative_problem = copy.deepcopy(original_problem)
+        alternative_problem = copy.deepcopy(problem)
         drop_links(alternative_problem, current_capacity)
         # Fix the capacity of all remaining links equal to their current value
         v_bounds = get_v_bounds(alternative_problem, method='exact')
         # Construct and solve the alternative model
         alternative_model = Model(alternative_problem, {
             'non_integer_trucks': True,
-            'linear_backlog_approx': True
+            'linear_backlog_approx': not problem.random
         }, {'v': v_bounds}, surpress_logs=True, parameters=settings['model_parameters'])
         alternative_objective = alternative_model.solve(problem.instance_name + '_alternative', {
             'bound': current_objective
@@ -129,7 +136,7 @@ def heuristic(problem, settings, create_initial_solution=True):
                     # Construct alternative model using the previously constructed v_bounds and solve it
                     alternative_model = Model(alternative_problem, {
                         'non_integer_trucks': True,
-                        'linear_backlog_approx': True
+                        'linear_backlog_approx': not problem.random
                     }, {'v': v_bounds}, surpress_logs=True, parameters=settings['model_parameters'])
                     alternative_objective = alternative_model.solve(problem.instance_name + '_alternative', {
                         'bound': start_objective
@@ -179,26 +186,30 @@ def heuristic(problem, settings, create_initial_solution=True):
     problem.display()
     # Step 4 - Converting to integer solution
     # --------------------------------------------------------------------------------------
-    start_time = time.time()
-    print()
-    print('Step 4 | Converting to integer solution, finalizing operational decisions')
-    print('-' * 70)
-    # Construct bounds to be used in reduced problem
-    bounds = {
-        'v': get_v_bounds(problem, method='integer')
-    }
-    # Create reduced, non-relaxed model
-    reduced_model = Model(problem, {
-        'linear_backlog_approx': True
-    }, bounds=bounds, surpress_logs=settings['step_4']['surpress_gurobi'], parameters=settings['model_parameters'])
-    reduced_model.solve(problem.instance_name, {
-        'gap': settings['step_4']['epsilon'],
-        'time': settings['step_4']['time']
-    })
+    if not problem.random:
+        start_time = time.time()
+        print()
+        print('Step 4 | Converting to integer solution, finalizing operational decisions')
+        print('-' * 70)
+        # Construct bounds to be used in reduced problem
+        bounds = {
+            'v': get_v_bounds(problem, method='integer')
+        }
+        # Create reduced, non-relaxed model
+        reduced_model = Model(problem, {
+            'linear_backlog_approx': True
+        }, bounds=bounds, surpress_logs=settings['step_4']['surpress_gurobi'], parameters=settings['model_parameters'])
+        reduced_model.solve(problem.instance_name, {
+            'gap': settings['step_4']['epsilon'],
+            'time': settings['step_4']['time']
+        })
+        end_time = time.time()
+        time_used.append(end_time - start_time)
+    else:
+        model = Model(problem, bounds={'v': get_v_bounds(problem, method='integer_round_up')}, surpress_logs=True)
+        model.solve(problem.instance_name, {'time': 5})
     # Load the feasible solution into our problem object
     original_problem.read_solution(problem.instance_name)
-    end_time = time.time()
-    time_used.append(end_time - start_time)
     # Log used time
     print('Time overview:')
     print('-' * 70)
@@ -208,6 +219,47 @@ def heuristic(problem, settings, create_initial_solution=True):
     print('Total time      |', str(round(sum(time_used), 2)) + 's')
     print('-' * 70)
     return original_problem
+
+
+# Random case
+def performance_analysis(problem, M):
+    drop_links(problem)
+    # Generate scenarios for evaluation
+    objectives = []
+    for m in range(M):
+        problem.generate_scenarios(1)
+        model = Model(problem, bounds={'v': get_v_bounds(problem, method='exact')}, surpress_logs=True)
+        model.write(problem.instance_name + '_test')
+        if m == 0:
+            print()
+            print('Evaluation |')
+            print('-' * 70)
+        objective = model.solve(stopping_criteria={'gap': 0.01}, instance_name=problem.instance_name + '_evaluation')
+        print(f'({m + 1}/{M}) | Found objective: {round(objective, 2)}')
+        objectives.append(objective)
+        # These lines can be used to log the evaluation scenario objectives
+        # problem.read_solution(problem.instance_name + '_evaluation')
+        # problem.log_objective(summary_only=True)
+    print('-' * 70)
+    np.savetxt('Evaluations/' + problem.instance_name + '_M' + str(M) + '_T' + str(problem.end) + '.txt',
+               objectives, fmt="%s")
+
+
+def monte_carlo_histogram(problem, M):
+    plt.figure()
+    plt.xlabel('Objective')
+    plt.ylabel('Frequency (as fraction of total)')
+    objectives = np.loadtxt('Evaluations/' + problem.instance_name + '_M' + str(M) + '_T' + str(problem.end) + '.txt')
+    plt.hist(objectives, bins=20, weights=np.ones(M) / M)
+    print('Monte Carlo statistics |', str(M), 'scenarios')
+    print('-' * 70)
+    print('Minimum objective |', round(min(objectives), 2))
+    print('Average objective |', round(np.average(objectives), 2))
+    print('Maximum objective |', round(max(objectives), 2))
+    print('-' * 70)
+    print('CI Lower bound    |', round(np.average(objectives) - 1.96 * (stdev(objectives) / math.sqrt(M)), 2))
+    print('CI Upper bound    |', round(np.average(objectives) + 1.96 * (stdev(objectives) / math.sqrt(M)), 2))
+    print('-' * 70)
 
 
 # Functions that remove one or multiple links from a problem
@@ -264,8 +316,16 @@ def get_utilization_costs(problem):
             v = problem.solution['v'][link]
             if v > 0:
                 link_costs = problem.opening_cost[link] + problem.capacity_cost[link] * v
-                link_utilization = sum([problem.product_volume[p] * problem.solution['x'][link[0], link[1], p, str(t)]
-                                        for p in problem.P for t in problem.T])
+                if not problem.random:
+                    link_utilization = sum(
+                        [problem.product_volume[p] * problem.solution['x'][link[0], link[1], p, str(t)]
+                         for p in problem.P for t in problem.T])
+                else:
+                    N = len(problem.scenarios)
+                    link_utilization = (1 / N) * sum([problem.product_volume[p]
+                                                      * problem.solution['x'][link[0], link[1], p, str(t), str(theta)]
+                                                      for p in problem.P for t in problem.T
+                                                      for theta in range(N)])
                 if link_utilization == 0:
                     utilization_costs[link] = math.inf
                 else:
@@ -288,6 +348,7 @@ def get_alternative_links(problem, destination, dropped_link, alternative_links=
     for new_link in new_links:
         alternative_links = get_alternative_links(problem, new_link[0], dropped_link, alternative_links)
     return alternative_links
+
 
 # Recursively returns all links that can be reached from a start node without passing by a supplier/customer node
 def get_connected_links(problem, start_node, connected_nodes=None, connected_links=None):

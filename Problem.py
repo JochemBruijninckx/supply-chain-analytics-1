@@ -130,10 +130,12 @@ def gen_instance(seed, num_s, num_d, num_c, num_p, T):
 
 class Problem:
 
-    def __init__(self, instance_name, random=False):
+    def __init__(self, instance_name, random=False, seed=None, extra_time_periods=False):
         # Retrieve instance file from Instances directory
         self.instance_name = instance_name
         self.random = random
+        if seed:
+            np.random.seed(seed)
         cwd = os.getcwd()
         filename = os.path.join(cwd, 'Instances/' + instance_name + '.xlsx')
         data = pd.read_excel(filename, sheet_name=None, engine='openpyxl')
@@ -162,6 +164,8 @@ class Problem:
         self.P = product_data['ProductID'].to_list()
         self.start = int(parameter_data['Value'][1].replace('T', ''))
         self.end = int(parameter_data['Value'][2].replace('T', ''))
+        if extra_time_periods:
+            self.end = round(self.end * 1.1)
         self.T = [t for t in range(self.start, self.end + 1, 1)]
         self.links = [(link_data['Origin'][i], link_data['Destination'][i]) for i in range(len(link_data))]
         # Index sets
@@ -231,10 +235,12 @@ class Problem:
         if not random:
             self.demand = {self.demand_set[i]: demand_data['Amount'][i] for i in range(len(demand_data))}
             self.cum_demand = {(c, p, t): sum(self.demand[c, p, f] for f in range(self.start, t + 1)
-                                              if (c, p, f) in self.demand_set) for (c, p, t) in self.customer_product_time}
+                                              if (c, p, f) in self.demand_set) for (c, p, t) in
+                               self.customer_product_time}
         else:
             self.demand_mean = {self.demand_set[i]: demand_data['Expected Amount'][i] for i in range(len(demand_data))}
-            self.demand_dev = {self.demand_set[i]: demand_data['Standard Deviation'][i] for i in range(len(demand_data))}
+            self.demand_dev = {self.demand_set[i]: demand_data['Standard Deviation'][i] for i in
+                               range(len(demand_data))}
         self.backlog_pen = {self.customer_product[i]: backlog_data['Amount'][i] for i in
                             range(len(backlog_data))}
         self.min_prod = {(s, p): 0 for s in self.S for p in self.P}
@@ -277,9 +283,12 @@ class Problem:
                             for s, p, t in self.supplier_product_time if (s, p) in self.supplier_product}
             demand = {(c, p, t): np.random.normal(loc=self.demand_mean[c, p, t], scale=self.demand_dev[c, p, t])
                       for c, p, t in self.demand_set}
+            cum_demand = {(c, p, t): sum([demand[c, p, f] for f in range(t) if (c, p, f) in self.demand_set])
+                          for c, p, t in self.customer_product_time}
             self.scenarios.append({
                 'availability': availability,
-                'demand': demand
+                'demand': demand,
+                'cum_demand': cum_demand
             })
 
     def compute_objective(self):
@@ -292,33 +301,61 @@ class Problem:
                 tot_opening_costs += extra_opening_cost
                 extra_capacity_cost = self.capacity_cost[link] * self.solution['v'][link]
                 tot_capacity_costs += extra_capacity_cost
-        # Distance costs
-        tot_distance_costs = 0
-        for link in self.links:
-            if self.solution['v'][link] > 0:
-                total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
-                extra_distance_cost = total_trucks_sent * self.distance[link]
-                tot_distance_costs += extra_distance_cost
-        # Holding costs
-        tot_holding_costs = 0
-        for d in self.D:
-            for p in self.P:
-                extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
-                                                                 * self.product_volume[p] for t in self.T])
-                tot_holding_costs += extra_holding_cost
-        # Backlog costs
-        tot_backlog_costs = 0
-        for c, p, t in self.customer_product_time:
-            extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
-            tot_backlog_costs += extra_backlog
-        return tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
+        if not self.random:
+            # Distance costs
+            tot_distance_costs = 0
+            for link in self.links:
+                if self.solution['v'][link] > 0:
+                    total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                    extra_distance_cost = total_trucks_sent * self.distance[link]
+                    tot_distance_costs += extra_distance_cost
+            # Holding costs
+            tot_holding_costs = 0
+            for d in self.D:
+                for p in self.P:
+                    extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
+                                                                     * self.product_volume[p] for t in self.T])
+                    tot_holding_costs += extra_holding_cost
+            # Backlog costs
+            tot_backlog_costs = 0
+            for c, p, t in self.customer_product_time:
+                extra_backlog = self.backlog_pen[c, p] * (
+                        self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
+                tot_backlog_costs += extra_backlog
+            return tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
+        else:
+            tot_distance_costs = 0
+            tot_holding_costs = 0
+            tot_backlog_costs = 0
+            N = len(self.scenarios)
+            for theta in range(N):
+                # Distance costs
+                for (i, j) in self.links:
+                    if self.solution['v'][i, j] > 0:
+                        total_trucks_sent = sum([self.solution['k'][i, j, str(t), str(theta)] for t in self.T])
+                        extra_distance_cost = total_trucks_sent * self.distance[i, j]
+                        tot_distance_costs += extra_distance_cost
+                # Holding costs
+                for d in self.D:
+                    for p in self.P:
+                        extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t), str(theta)]
+                                                                         * self.product_volume[p] for t in self.T])
+                        tot_holding_costs += extra_holding_cost
+                # Backlog costs
+                for c, p, t in self.customer_product_time:
+                    extra_backlog = self.backlog_pen[c, p] * abs((self.solution['I'][c, p, str(t), str(theta)]
+                                                                  - self.scenarios[theta]['cum_demand'][c, p, t]))
+                    tot_backlog_costs += extra_backlog
+            tot_objective = tot_opening_costs + tot_capacity_costs + \
+                            (1 / N) * (tot_distance_costs + tot_holding_costs + tot_backlog_costs)
+            return tot_objective
 
     # Log the amount of trucks sent over each link at each point in time
     def log_k(self):
         k = {}
-        for link in self.links:
-            if self.solution['l'][link] == 1:
-                k[link] = [round(self.solution['k'][link + (str(t),)]) for t in self.T]
+        for (i, j) in self.links:
+            if self.solution['l'][i, j] == 1:
+                k[i, j] = [round(self.solution['k'][i, j, str(t)]) for t in self.T]
         print()
         print('Amount of trucks sent over each link at each point in time:')
         print('-' * 70)
@@ -355,72 +392,152 @@ class Problem:
         if not summary_only:
             print('Total capacity costs:', round(tot_capacity_costs, 2))
             print('-' * 70)
-        # Distance costs
-        tot_distance_costs = 0
-        for link in self.links:
-            if link in self.solution['v'].keys():
-                if self.solution['v'][link] > 0:
-                    total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
-                    extra_distance_cost = total_trucks_sent * self.distance[link]
+        if not self.random:
+            # Distance costs
+            tot_distance_costs = 0
+            for link in self.links:
+                if link in self.solution['v'].keys():
+                    if self.solution['v'][link] > 0:
+                        total_trucks_sent = sum([self.solution['k'][link + (str(t),)] for t in self.T])
+                        extra_distance_cost = total_trucks_sent * self.distance[link]
+                        if not summary_only:
+                            print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
+                                  '| Cost per:', round(self.distance[link], 2), '| Total cost:',
+                                  round(extra_distance_cost, 2))
+                        tot_distance_costs += extra_distance_cost
+            if not summary_only:
+                print('Total distance costs:', round(tot_distance_costs, 2))
+                print('-' * 70)
+            # Holding costs
+            tot_holding_costs = 0
+            for d in self.D:
+                if not summary_only:
+                    print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
+                for p in self.P:
                     if not summary_only:
-                        print(link, '| Total trucks sent on link: ', round(total_trucks_sent),
-                              '| Cost per:', round(self.distance[link], 2), '| Total cost:',
-                              round(extra_distance_cost, 2))
-                    tot_distance_costs += extra_distance_cost
-        if not summary_only:
-            print('Total distance costs:', round(tot_distance_costs, 2))
-            print('-' * 70)
-        # Holding costs
-        tot_holding_costs = 0
-        for d in self.D:
+                        print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
+                                                     for t in self.T])
+                    extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
+                                                                     * self.product_volume[p] for t in self.T])
+                    if not summary_only:
+                        print(d, p, '| Total inventory:', round(sum([round(self.solution['I'][d, p, str(t)]
+                                                                           * self.product_volume[p], 2)
+                                                                     for t in self.T]), 2),
+                              '| Total cost:', round(extra_holding_cost, 2))
+                    tot_holding_costs += extra_holding_cost
             if not summary_only:
-                print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
-            for p in self.P:
-                if not summary_only:
-                    print(d, p, '| Inventory:', [round(self.solution['I'][d, p, str(t)] * self.product_volume[p], 2)
-                                                 for t in self.T])
-                extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t)]
-                                                                 * self.product_volume[p] for t in self.T])
-                if not summary_only:
-                    print(d, p, '| Total inventory:', round(sum([round(self.solution['I'][d, p, str(t)]
-                                                                       * self.product_volume[p], 2)
-                                                                 for t in self.T]), 2),
-                          '| Total cost:', round(extra_holding_cost, 2))
-                tot_holding_costs += extra_holding_cost
-        if not summary_only:
-            print('Total holding costs:', round(tot_holding_costs, 2))
-            print('-' * 70)
-        # Backlog costs
-        tot_backlog_costs = 0
-        for c in self.C:
-            customer_backlog = 0
-            if not summary_only:
-                print(c, '|')
+                print('Total holding costs:', round(tot_holding_costs, 2))
                 print('-' * 70)
-            for p in self.P:
+            # Backlog costs
+            tot_backlog_costs = 0
+            cum_demand = self.cum_demand if not self.random else self.scenarios[0]['cum_demand']
+            for c in self.C:
+                customer_backlog = 0
                 if not summary_only:
-                    print(c, p, '|', [round(self.cum_demand[c, p, t], 2) for t in self.T],
-                          '- Cumulative demand over time')
-                    print(c, p, '|', [round(self.solution['I'][c, p, str(t)], 2) for t in self.T],
-                          '- Total delivered over time')
-                product_backlog = 0
-                for t in self.T:
-                    product_backlog += self.backlog_pen[c, p] * ((self.solution['I'][c, p, str(t)]
-                                                                  - self.cum_demand[c, p, t]) ** 2)
-                customer_backlog += product_backlog
-                if not summary_only:
-                    print(c, p, '| Product backlog costs:', product_backlog)
+                    print(c, '|')
                     print('-' * 70)
+                for p in self.P:
+                    if not summary_only:
+                        print(c, p, '|', [round(cum_demand[c, p, t], 2) for t in self.T],
+                              '- Cumulative demand over time')
+                        print(c, p, '|', [round(self.solution['I'][c, p, str(t)], 2) for t in self.T],
+                              '- Total delivered over time')
+                    product_backlog = 0
+                    for t in self.T:
+                        product_backlog += self.backlog_pen[c, p] * ((self.solution['I'][c, p, str(t)]
+                                                                      - cum_demand[c, p, t]) ** 2)
+                    customer_backlog += product_backlog
+                    if not summary_only:
+                        print(c, p, '| Product backlog costs:', product_backlog)
+                        print('-' * 70)
+                if not summary_only:
+                    print(c, '| Customer backlog costs:', round(customer_backlog, 2))
+                    print('-' * 70)
+            for c, p, t in self.customer_product_time:
+                extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - cum_demand[c, p, t]) ** 2
+                tot_backlog_costs += extra_backlog
             if not summary_only:
-                print(c, '| Customer backlog costs:', round(customer_backlog, 2))
+                print('Total backlog costs:', round(tot_backlog_costs, 2))
                 print('-' * 70)
-        for c, p, t in self.customer_product_time:
-            extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
-            tot_backlog_costs += extra_backlog
-        if not summary_only:
-            print('Total backlog costs:', round(tot_backlog_costs, 2))
-            print('-' * 70)
-        tot_objective = tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
+            tot_objective = tot_opening_costs + tot_capacity_costs + tot_distance_costs \
+                            + tot_holding_costs + tot_backlog_costs
+        else:
+            tot_distance_costs = 0
+            tot_holding_costs = 0
+            tot_backlog_costs = 0
+            N = len(self.scenarios)
+            for theta in range(N):
+                if not summary_only:
+                    print('SCENARIO', theta)
+                    print('-' * 70)
+                # Distance costs
+                tot_distance_costs = 0
+                for (i, j) in self.links:
+                    if (i, j) in self.solution['v'].keys():
+                        if self.solution['v'][i, j] > 0:
+                            total_trucks_sent = sum([self.solution['k'][i, j, str(t), str(theta)] for t in self.T])
+                            extra_distance_cost = total_trucks_sent * self.distance[i, j]
+                            if not summary_only:
+                                print(i, j, '| Total trucks sent on link: ', round(total_trucks_sent),
+                                      '| Cost per:', round(self.distance[i, j], 2), '| Total cost:',
+                                      round(extra_distance_cost, 2))
+                            tot_distance_costs += extra_distance_cost / N
+                if not summary_only:
+                    print('Total distance costs:', round(tot_distance_costs, 2))
+                    print('-' * 70)
+                # Holding costs
+                for d in self.D:
+                    if not summary_only:
+                        print(d, '| Holding costs:', self.holding_cost[d], 'Capacity:', self.capacity[d])
+                    for p in self.P:
+                        if not summary_only:
+                            print(d, p, '| Inventory:',
+                                  [round(self.solution['I'][d, p, str(t), str(theta)] * self.product_volume[p], 2)
+                                   for t in self.T])
+                        extra_holding_cost = self.holding_cost[d] * sum([self.solution['I'][d, p, str(t), str(theta)]
+                                                                         * self.product_volume[p] for t in self.T])
+                        if not summary_only:
+                            print(d, p, '| Total inventory:',
+                                  round(sum([round(self.solution['I'][d, p, str(t), str(theta)]
+                                                   * self.product_volume[p], 2)
+                                             for t in self.T]), 2),
+                                  '| Total cost:', round(extra_holding_cost, 2))
+                        tot_holding_costs += extra_holding_cost / N
+                if not summary_only:
+                    print('Total holding costs:', round(tot_holding_costs, 2))
+                    print('-' * 70)
+                # Backlog costs
+                cum_demand = self.scenarios[theta]['cum_demand']
+                for c in self.C:
+                    customer_backlog = 0
+                    if not summary_only:
+                        print(c, '|')
+                        print('-' * 70)
+                    for p in self.P:
+                        if not summary_only:
+                            print(c, p, '|', [round(cum_demand[c, p, t], 2) for t in self.T],
+                                  '- Cumulative demand over time')
+                            print(c, p, '|', [round(self.solution['I'][c, p, str(t), str(theta)], 2) for t in self.T],
+                                  '- Total delivered over time')
+                        product_backlog = 0
+                        for t in self.T:
+                            product_backlog += self.backlog_pen[c, p] * abs(self.solution['I'][c, p, str(t), str(theta)]
+                                                                          - cum_demand[c, p, t])
+                        customer_backlog += product_backlog
+                        if not summary_only:
+                            print(c, p, '| Product backlog costs:', product_backlog)
+                            print('-' * 70)
+                    if not summary_only:
+                        print(c, '| Customer backlog costs:', round(customer_backlog, 2))
+                        print('-' * 70)
+                for c, p, t in self.customer_product_time:
+                    extra_backlog = self.backlog_pen[c, p] * abs(
+                        self.solution['I'][c, p, str(t), str(theta)] - cum_demand[c, p, t])
+                    tot_backlog_costs += extra_backlog / N
+                if not summary_only:
+                    print('Total backlog costs:', round(tot_backlog_costs, 2))
+                    print('-' * 70)
+            tot_objective = tot_opening_costs + tot_capacity_costs + tot_distance_costs + tot_holding_costs + tot_backlog_costs
         print('Total opening costs  |', round(tot_opening_costs, 2))
         print('Total capacity costs |', round(tot_capacity_costs, 2))
         print('Total distance costs |', round(tot_distance_costs, 2))
@@ -435,13 +552,26 @@ class Problem:
         }
 
     def log_production(self):
-        for s in self.S:
-            print(s, '|')
-            print('-' * 70)
-            for p in self.P:
-                production = [round(sum(self.solution['x'][s, j, p, str(t)] for j in self.D_and_C), 2) for t in self.T]
-                print(p, '|', production)
-            print('-' * 70)
+        if not self.random:
+            for s in self.S:
+                print(s, '|')
+                print('-' * 70)
+                for p in self.P:
+                    production = [round(sum(self.solution['x'][s, j, p, str(t)] for j in self.D_and_C), 2) for t in
+                                  self.T]
+                    print(p, '|', production)
+                print('-' * 70)
+        else:
+            for theta in range(len(self.scenarios)):
+                for s in self.S:
+                    print(s, '|')
+                    print('-' * 70)
+                    for p in self.P:
+                        production = [round(sum(self.solution['x'][s, j, p, str(t), str(theta)]
+                                                for j in self.D_and_C if (s, j, p, str(t), str(theta))
+                                                in self.solution['x'].keys()), 2) for t in self.T]
+                        print(p, '|', production)
+                    print('-' * 70)
 
     def verify_constraints(self):
         # 1 - Link opening constraint

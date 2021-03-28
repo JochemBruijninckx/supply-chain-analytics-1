@@ -28,9 +28,7 @@ class Model:
             customer_product_time = problem.customer_product_time
             dc_product_time = problem.dc_product_time
         else:
-            # Generate scenarios
-            N = 10
-            problem.generate_scenarios(N)
+            N = len(problem.scenarios)
             link_product_time = [(i, j, p, t, theta) for i, j, p, t in problem.link_product_time for theta in range(N)]
             supplier_product_time = [(s, p, t, theta) for s, p, t in problem.supplier_product_time
                                      for theta in range(N)]
@@ -43,7 +41,8 @@ class Model:
         # Variables
         # --------------------------------------------------------------------------------------
         x = mdl.addVars(link_product_time, vtype=gb.GRB.CONTINUOUS, lb=0, name='x')
-        r = mdl.addVars(supplier_product_time, vtype=gb.GRB.BINARY, name='r')
+        if not problem.random:
+            r = mdl.addVars(supplier_product_time, vtype=gb.GRB.BINARY, name='r')
         if settings['all_links_open']:
             l = mdl.addVars(problem.links, vtype=gb.GRB.BINARY, name='l', lb=1, ub=1)
         else:
@@ -111,10 +110,9 @@ class Model:
                             for d, t in problem.depot_time) for theta in range(N))
 
             # Backlog costs
-            if not settings['perfect_delivery']:
-                tot_backlog_cost += (1 / N) * gb.quicksum(gb.quicksum(problem.backlog_pen[c, p] * z[c, p, t, theta]
-                                                                      for c, p, t in problem.customer_product_time) for
-                                                          theta in range(N))
+            tot_backlog_cost += (1 / N) * gb.quicksum(gb.quicksum(problem.backlog_pen[c, p] * z[c, p, t, theta]
+                                                                  for c, p, t in problem.customer_product_time) for
+                                                      theta in range(N))
 
         mdl.setObjective(tot_opening_cost + tot_capacity_cost + tot_distance_cost + tot_holding_cost + tot_backlog_cost,
                          gb.GRB.MINIMIZE)
@@ -130,7 +128,7 @@ class Model:
         if not problem.random:
             # Truck capacity on links
             mdl.addConstrs(
-                (k[i, j, t] <= v[i, j] for i, j, t in problem.link_time),
+                (k[i, j, t] <= v[i, j] for i, j, t in link_time),
                 name='# Trucks cannot exceed capacity'
             )
             # Sufficient amount of trucks for transport size
@@ -162,7 +160,8 @@ class Model:
             mdl.addConstrs(
                 (gb.quicksum(x[d, j, p, t] for j in problem.D_and_C if (d, j) in problem.links) <=
                  I[d, p, t - 1] + gb.quicksum(x[j, d, p, t - problem.duration[j, d]] for j in problem.S_and_D
-                                              if (j, d) in problem.links and t - problem.duration[j, d] >= problem.start)
+                                              if
+                                              (j, d) in problem.links and t - problem.duration[j, d] >= problem.start)
                  for d, p, t in problem.depot_product_time),
                 name='Outgoing transport from depot cannot exceed inventory'
             )
@@ -213,9 +212,86 @@ class Model:
                      for c, p, t in problem.customer_product_time
                      for w in [-delta, delta])
                 )
-
         else:
-            print()
+            # Truck capacity on links
+            mdl.addConstrs(
+                (k[i, j, t, theta] <= v[i, j] for i, j, t, theta in link_time),
+                name='# Trucks cannot exceed capacity'
+            )
+            # Sufficient amount of trucks for transport size
+            mdl.addConstrs(
+                (k[i, j, t, theta] >= gb.quicksum(problem.product_volume[p] * x[i, j, p, t, theta]
+                                                  for p in problem.P) / problem.truck_size
+                 for i, j, t, theta in link_time),
+                name='# Trucks required for transport volume'
+            )
+            # Maximum production constraint for suppliers
+            mdl.addConstrs(
+                (gb.quicksum(x[s, j, p, t, theta] for j in problem.D_and_C if (s, j) in problem.links) <=
+                 problem.max_prod[s, p] * problem.scenarios[theta]['availability'][s, p, t]
+                 for s, p, t, theta in supplier_product_time if (s, p) in problem.supplier_product),
+                name='Maximum allowed production if supplier used'
+            )
+            mdl.addConstrs(
+                (gb.quicksum(x[s, j, p, t, theta] for j in problem.D_and_C if (s, j) in problem.links) <= 0
+                 for s, p, t, theta in supplier_product_time if (s, p) not in problem.supplier_product),
+                name='Maximum allowed production if supplier used'
+            )
+            # Capacity constraint for depots
+            mdl.addConstrs(
+                (gb.quicksum(problem.product_volume[p] * I[d, p, t, theta] for p in problem.P) <= problem.capacity[d]
+                 for d, t in problem.depot_time for theta in range(N)),
+                name='Depot inventory volume cannot exceed capacity'
+            )
+            # Cannot transport more from depots than is in their inventories
+            mdl.addConstrs(
+                (gb.quicksum(x[d, j, p, t, theta] for j in problem.D_and_C if (d, j) in problem.links) <=
+                 I[d, p, t - 1, theta] + gb.quicksum(x[j, d, p, t - problem.duration[j, d], theta]
+                                                     for j in problem.S_and_D if (j, d) in problem.links
+                                                     and t - problem.duration[j, d] >= problem.start)
+                 for d, p, t in problem.depot_product_time for theta in range(N)),
+                name='Outgoing transport from depot cannot exceed inventory'
+            )
+            # Flow constraints
+            mdl.addConstrs(
+                (I[d, p, t, theta] == I[d, p, t - 1, theta]
+                 + gb.quicksum(x[j, d, p, t - problem.duration[j, d], theta] for j in problem.S_and_D
+                               if (j, d) in problem.links and t - problem.duration[j, d] >= problem.start)
+                 - gb.quicksum(x[d, j, p, t, theta] for j in problem.D_and_C if (d, j) in problem.links)
+                 for d, p, t in problem.depot_product_time for theta in range(N)),
+                name='Depot inventory flow constraint'
+            )
+            mdl.addConstrs(
+                (I[c, p, t, theta] == I[c, p, t - 1, theta]
+                 + gb.quicksum(x[i, c, p, t - problem.duration[i, c], theta] for i in problem.S_and_D
+                               if t - problem.duration[i, c] >= problem.start and (i, c) in problem.links)
+                 for c, p, t in problem.customer_product_time for theta in range(N)),
+                name='Customer inventory flow constraint'
+            )
+            # Nodes start at zero inventory
+            mdl.addConstrs(
+                (I[i, p, 0, theta] == 0 for i in problem.D_and_C for p in problem.P for theta in range(N)),
+                name='Nodes start at zero inventory'
+            )
+            # All demand must be filled by end of period
+            # mdl.addConstrs(
+            #     (I[c, p, problem.end, theta] == problem.scenarios[theta]['cum_demand'][c, p, problem.end]
+            #      for c, p in problem.customer_product for theta in range(N)),
+            #     name='Final customer inventory must match cumulative demand'
+            # )
+
+            if settings['perfect_delivery']:
+                mdl.addConstrs(
+                    (I[c, p, t, theta] == problem.scenarios[theta]['cum_demand'][c, p, problem.end]
+                     for c, p, t in problem.customer_product_time for theta in range(N)),
+                    name='Perfect delivery constraint'
+                )
+
+            mdl.addConstrs(
+                (z[c, p, t, theta] >= w * (I[c, p, t, theta] - problem.scenarios[theta]['cum_demand'][c, p, t])
+                 for c, p, t in problem.customer_product_time
+                 for w in [-1, 1] for theta in range(N))
+            )
 
         # Generate model
         mdl.update()
@@ -245,3 +321,6 @@ class Model:
 
     def write(self, instance_name):
         self.mdl.write('Instances/' + instance_name + '.lp')
+
+    def save_solution(self, instance_name):
+        self.mdl.write('Solutions/' + instance_name + '.sol')
