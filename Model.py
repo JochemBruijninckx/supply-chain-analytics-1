@@ -273,12 +273,6 @@ class Model:
                 (I[i, p, 0, theta] == 0 for i in problem.D_and_C for p in problem.P for theta in range(N)),
                 name='Nodes start at zero inventory'
             )
-            # All demand must be filled by end of period
-            # mdl.addConstrs(
-            #     (I[c, p, problem.end, theta] == problem.scenarios[theta]['cum_demand'][c, p, problem.end]
-            #      for c, p in problem.customer_product for theta in range(N)),
-            #     name='Final customer inventory must match cumulative demand'
-            # )
 
             if settings['perfect_delivery']:
                 mdl.addConstrs(
