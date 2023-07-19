@@ -205,9 +205,11 @@ class Model:
                     self.mdl.setParam('BestBdStop', value)
                 elif key == 'gap':
                     self.mdl.setParam('MIPGap', value)
+                elif key == 'time':
+                    self.mdl.setParam('TimeLimit', value)
         # Optimize
         self.mdl.optimize()
-        if self.mdl.status not in [2, 11, 15] or self.mdl.getAttr('SolCount') == 0:
+        if self.mdl.status not in [2, 9, 11, 15] or self.mdl.getAttr('SolCount') == 0:
             return np.inf
         # Save solution
         if instance_name:
