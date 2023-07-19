@@ -464,7 +464,7 @@ class Problem:
                 print(c, '| Customer backlog costs:', round(customer_backlog, 2))
                 print('-' * 70)
         for c, p, t in self.customer_product_time:
-            extra_backlog = self.backlog_pen[c, p] * (self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t]) ** 2
+            extra_backlog = self.backlog_pen[c, p] * abs(self.solution['I'][c, p, str(t)] - self.cum_demand[c, p, t])
             tot_backlog_costs += extra_backlog
         if not summary_only:
             print('Total backlog costs:', round(tot_backlog_costs, 2))

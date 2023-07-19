@@ -4,8 +4,8 @@ from Solver import *
 
 # Task to run
 # --------------------------------------------------------------------------------------
-instance_name = 'large_data_set'   # Enter a number to generate a random instance
-method = 'heuristic'                     # Options are 'read', 'solve', 'heuristic'
+instance_name = 'small_data_set_2022'   # Enter a number to generate a random instance
+method = 'solve'                     # Options are 'read', 'solve', 'heuristic'
 
 # Task settings (only used if method is 'heuristic')
 # --------------------------------------------------------------------------------------
@@ -34,7 +34,7 @@ heuristic_settings = {
 
 # Function calls
 # --------------------------------------------------------------------------------------
-if instance_name not in ['small_data_set', 'large_data_set']:
+if instance_name not in ['small_data_set', 'large_data_set', 'small_data_set_2022']:
     # This function can be called to generate an .xlsx instance file
     gen_instance(seed=int(instance_name),
                  num_s=6,
@@ -57,7 +57,9 @@ elif method == 'heuristic':
 
 # Log functions for solution
 # --------------------------------------------------------------------------------------
-problem.verify_constraints()
+# problem.verify_constraints()
+# problem.log_solution()
+problem.log_backlog()
 problem.log_objective(summary_only=True)
 problem.display()
 input('Press enter to exit..')

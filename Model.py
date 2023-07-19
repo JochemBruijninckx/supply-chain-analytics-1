@@ -1,3 +1,5 @@
+import math
+
 import gurobipy as gb
 import numpy as np
 
@@ -24,6 +26,7 @@ class Model:
         # --------------------------------------------------------------------------------------
         x = mdl.addVars(problem.link_product_time, vtype=gb.GRB.CONTINUOUS, lb=0, name='x')
         r = mdl.addVars(problem.supplier_product_time, vtype=gb.GRB.BINARY, name='r')
+        a = mdl.addVars(problem.customer_product_time, vtype=gb.GRB.CONTINUOUS, name='a')
         if settings['all_links_open']:
             l = mdl.addVars(problem.links, vtype=gb.GRB.BINARY, name='l', lb=1, ub=1)
         else:
@@ -80,7 +83,7 @@ class Model:
                                                 for c, p, t in problem.customer_product_time)
             else:
                 tot_backlog_cost += gb.quicksum(
-                    problem.backlog_pen[c, p] * (I[c, p, t] - problem.cum_demand[c, p, t]) ** 2
+                    problem.backlog_pen[c, p] * a[c, p, t]
                     for c, p, t in problem.customer_product_time)
 
         mdl.setObjective(tot_opening_cost + tot_capacity_cost + tot_distance_cost + tot_holding_cost + tot_backlog_cost,
@@ -88,6 +91,15 @@ class Model:
 
         # Constraints
         # --------------------------------------------------------------------------------------
+        mdl.addConstrs(
+            a[c, p, t] >= I[c, p, t] - problem.cum_demand[c, p, t]
+            for c, p, t in problem.customer_product_time
+        )
+        mdl.addConstrs(
+            a[c, p, t] >= problem.cum_demand[c, p, t] - I[c, p, t]
+            for c, p, t in problem.customer_product_time
+        )
+
         # Linking constraint for opening of links
         mdl.addConstrs(
             (10000 * l[i, j] >= v[i, j] for i, j in problem.links),
@@ -153,10 +165,10 @@ class Model:
             name='Nodes start at zero inventory'
         )
         # All demand must be filled by end of period
-        mdl.addConstrs(
-            (I[c, p, problem.end] == problem.cum_demand[c, p, problem.end] for c, p in problem.customer_product),
-            name='Final customer inventory must match cumulative demand'
-        )
+        # mdl.addConstrs(
+        #     (I[c, p, problem.end] == problem.cum_demand[c, p, problem.end] for c, p in problem.customer_product),
+        #     name='Final customer inventory must match cumulative demand'
+        # )
 
         if settings['perfect_delivery']:
             mdl.addConstrs(
